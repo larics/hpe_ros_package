@@ -6,8 +6,9 @@ from cv_bridge import CvBridge
 import cv2
 
 
+
 def img_publisher(video):
-    publisher = rospy.Publisher("camera", Image, queue_size=1)
+    publisher = rospy.Publisher("usb_camera/image_raw", Image, queue_size=1)
     bridge = CvBridge()
 
     filename = video + "/rgb-000"

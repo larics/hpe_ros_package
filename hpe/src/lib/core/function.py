@@ -215,16 +215,16 @@ def network_use(config, val_loader, model, criterion, center, scale, writer_dict
         #print(output)
         #print(list(output.size()))
         if config.TEST.FLIP_TEST:
-          input_flipped = np.flip(val_loader.numpy(), 3).copy()
-          input_flipped = torch.from_numpy(input_flipped).cuda()
-          output_flipped = model(input_flipped)
-          output_flipped = np.flip(output_flipped.cpu().detach().numpy(), 3).copy()
-          output_flipped = torch.from_numpy(output_flipped.copy()).cuda()
+            input_flipped = np.flip(val_loader.numpy(), 3).copy()
+            input_flipped = torch.from_numpy(input_flipped).cuda()
+            output_flipped = model(input_flipped)
+            output_flipped = np.flip(output_flipped.cpu().detach().numpy(), 3).copy()
+            output_flipped = torch.from_numpy(output_flipped.copy()).cuda()
 
-        #feature is not aligned, shift flipped heatmap for higher accuracy
-        if config.TEST.SHIFT_HEATMAP:
-            output_flipped[:, :, :, 1:] = \
-                output_flipped.clone()[:, :, :, 0:-1]
+          #feature is not aligned, shift flipped heatmap for higher accuracy
+            if config.TEST.SHIFT_HEATMAP:
+                output_flipped[:, :, :, 1:] = \
+                    output_flipped.clone()[:, :, :, 0:-1]
 
             output = (output + output_flipped) * 0.5
 
