@@ -1,13 +1,13 @@
-#!/usr/bin/python3
+#!/opt/conda/bin/python3
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import numpy
 import rospy
-import data_to_images
 from sensor_msgs.msg import Image
 from data_to_images import draw_point
+from data_to_images import draw_stickman
 import cv2
 
 import argparse
@@ -78,7 +78,7 @@ def parse_args():
                         help='coco detection bbox file',
                         type=str)
 
-    args = parser.parse_args()
+    args, unkown = parser.parse_known_args()
 
     return args
 
@@ -115,7 +115,7 @@ def main(data):
     #transposed_img = transposed_img.type(torch.FloatTensor)
     #valid_loader = transposed_img[None,:,:,:]
 
-    box = [0, 0, 720, 576]
+    box = [0, 0, data.width, data.height]
     x,y,w,h = box[:4]
 
     center = numpy.zeros((2), dtype=numpy.float32)
@@ -131,7 +131,7 @@ def main(data):
         [w * 1.0 / pixel_std, h * 1.0 / pixel_std],
         dtype=numpy.float32)
     if center[0] != -1:
-        scale = scale * 1.25
+        scale = scale * 1.2
 
 
     r = 0
@@ -141,6 +141,8 @@ def main(data):
         trans,
         (int(config.MODEL.IMAGE_SIZE[0]), int(config.MODEL.IMAGE_SIZE[1])),
         flags=cv2.INTER_LINEAR)
+    #cv2.imshow("Input", input)
+    #cv2.waitKey(0)
 
     transform = transforms.Compose([
         transforms.ToTensor(),
@@ -148,6 +150,7 @@ def main(data):
                              std=[0.229, 0.224, 0.225]),
     ])
     input = transform(input).unsqueeze(0)
+
 
     # Calculate metadata
     #center = numpy.array([data.height / 2, data.width / 2])
@@ -161,7 +164,7 @@ def main(data):
     #end_point = (150 + 500, 50 + 450)
     #color = (255,0,0)
     #cv2.rectangle(org_img, start_point, end_point, color,3)
-    draw_point(preds, org_img)
+    draw_stickman(preds, org_img)
 
 if __name__ == '__main__':
     args = parse_args()
@@ -197,5 +200,5 @@ if __name__ == '__main__':
 
 
     rospy.init_node("camera_hpe")
-    camera_subscriber = rospy.Subscriber("usb_cam/image_raw", Image, main, queue_size=1)
+    camera_subscriber = rospy.Subscriber("usb_camera/image_raw", Image, main, queue_size=1)
     rospy.spin()
