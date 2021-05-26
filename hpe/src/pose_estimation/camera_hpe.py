@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -197,5 +197,5 @@ if __name__ == '__main__':
 
 
     rospy.init_node("camera_hpe")
-    camera_subscriber = rospy.Subscriber("camera", Image, main, queue_size=1)
+    camera_subscriber = rospy.Subscriber("usb_cam/image_raw", Image, main, queue_size=1)
     rospy.spin()
