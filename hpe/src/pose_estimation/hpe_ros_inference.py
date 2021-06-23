@@ -9,7 +9,8 @@ import rospy
 import data_to_images
 import cv2
 from sensor_msgs.msg import Image
-from darknet_ros_msgs.msg import BoundingBoxes
+from std_msgs.msg import Float64MultiArray
+#from darknet_ros_msgs.msg import BoundingBoxes
 
 import argparse
 import os
@@ -89,11 +90,12 @@ class HumanPoseEstimationROS():
 
     def _init_subscribers(self):
         self.camera_sub = rospy.Subscriber("usb_camera/image_raw", Image, self.image_cb, queue_size=1)
-        self.darknet_sub = rospy.Subscriber("/darknet_ros/bounding_boxes", BoundingBoxes, self.darknet_cb, queue_size=1)
+        #self.darknet_sub = rospy.Subscriber("/darknet_ros/bounding_boxes", BoundingBoxes, self.darknet_cb, queue_size=1)
 
     def _init_publishers(self):
         self.dummy_pub = rospy.Publisher("/dummy_pub", Bool, queue_size=1)
         self.image_pub = rospy.Publisher("/stickman", Image, queue_size=1)
+        self.pred_pub = rospy.Publisher("/hpe_preds", Float64MultiArray, queue_size=1)
 
     def _load_model(self, config):
         
@@ -253,7 +255,16 @@ class HumanPoseEstimationROS():
                 stickman = HumanPoseEstimationROS.draw_stickman(pil_img, preds[0])
                 stickman_ros_msg = HumanPoseEstimationROS.convert_pil_to_ros_img(stickman)
 
+                # Prepare predictions for publishing - convert to 1D float list
+                converted_preds = []
+                for pred in preds[0]:
+                    converted_preds.append(pred[0])
+                    converted_preds.append(pred[1])
+                preds_ros_msg = Float64MultiArray()
+                preds_ros_msg.data = converted_preds
+                
                 self.image_pub.publish(stickman_ros_msg)
+                self.pred_pub.publish(preds_ros_msg)
             
             self.rate.sleep()
 
