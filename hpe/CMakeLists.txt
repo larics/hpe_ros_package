@@ -99,6 +99,7 @@ catkin_install_python(PROGRAMS
    src/pose_estimation/camera_hpe.py
    src/pose_estimation/camera_simulator.py
    src/pose_estimation/data_to_images.py
+   src/pose_estimation/drone_controller.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

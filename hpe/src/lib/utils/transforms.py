@@ -104,7 +104,7 @@ def get_3rd_point(a, b):
 def get_dir(src_point, rot_rad):
     sn, cs = np.sin(rot_rad), np.cos(rot_rad)
 
-    src_result = [0, 0]
+    src_result = np.array([0, 0], dtype=np.float32)
     src_result[0] = src_point[0] * cs - src_point[1] * sn
     src_result[1] = src_point[0] * sn + src_point[1] * cs
 
