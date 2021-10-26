@@ -6,6 +6,7 @@ from __future__ import print_function
 
 import numpy
 import rospy
+from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import Image
 from data_to_images import draw_point
 from data_to_images import draw_stickman
@@ -28,7 +29,7 @@ import _init_paths
 from core.config import config
 from core.config import update_config
 from core.config import update_dir
-from core.inference import get_final_preds
+from core.inference import get_final_preds, get_max_preds
 from utils.utils import create_logger
 from utils.transforms import get_affine_transform
 
