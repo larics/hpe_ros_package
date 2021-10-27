@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(hpe)
+
+# This changes over time. 
 set(Torch_DIR "/opt/conda/pkgs/pytorch-1.6.0-py3.7_cuda10.1.243_cudnn7.6.3_0/lib/python3.7/site-packages/torch/share/cmake/Torch/")
 
 

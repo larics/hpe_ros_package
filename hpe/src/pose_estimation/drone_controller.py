@@ -10,8 +10,14 @@ from PIL import ImageOps
 import cv2
 import numpy
 
-class hpe_to_position:
-    def __init__(self):
+class uavController:
+    def __init__(self, frequency):
+
+
+        nn_init_time_sec = 10
+        rospy.init_node("uav_controller")
+        rospy.sleep(nn_init_time_sec)
+
         self.current_x = 0
         self.current_y = 0
         self.current_z = 1
@@ -29,7 +35,6 @@ class hpe_to_position:
 
         self.rotation_area = [30, 250]
         self.rotation_deadzone = [120, 160]
-
         
         self.x_area = [390, 610]
         self.x_deadzone = [480, 520]
@@ -38,7 +43,8 @@ class hpe_to_position:
         self.y_deadzone = [180, 220]
 
         self.started = False
-        
+        print("Frequency is: {}".format(frequency))
+        self.rate = rospy.Rate(int(frequency))        
         
     
     def pred_cb(self, converted_preds):
@@ -150,8 +156,16 @@ class hpe_to_position:
         #draw.rectangle([(80, 50), (200, 350)], outline ="green", width=2)
 
         img = ImageOps.mirror(img)        
-        ros_msg = hpe_to_position.convert_pil_to_ros_img(img)
+        ros_msg = uavController.convert_pil_to_ros_img(img) # Find better way to do this
         self.stickman_area_pub.publish(ros_msg)
+
+
+    def run(self): 
+        rospy.spin()
+        while not rospy.is_shutdown():   
+            print("Running UAV control...")  
+            self.rate.sleep()
+    
     
     @staticmethod
     def convert_pil_to_ros_img(img):
@@ -164,9 +178,12 @@ class hpe_to_position:
         msg.is_bigendian = False
         msg.step = 3 * img.width
         msg.data = numpy.array(img).tobytes()
-        return msg     
+        return msg
+
+
         
 
-rospy.init_node("hpe_to_position")
-HtP = hpe_to_position()
-rospy.spin()
+if __name__ == '__main__':
+
+    uC = uavController(sys.argv[1])
+    uC.run()

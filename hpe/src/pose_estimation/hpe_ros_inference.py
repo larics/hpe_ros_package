@@ -65,6 +65,7 @@ class HumanPoseEstimationROS():
 
         self.model_ready = False
         self.first_img_reciv = False
+        self.nn_input_formed = False
 
         self.logger.info("[HPE-SimpleBaselines] Loading model")
         self.model = self._load_model(config)
@@ -159,6 +160,8 @@ class HumanPoseEstimationROS():
         
         # Transform img to 
         self.nn_input = transform(self.cam_img).unsqueeze(0)   
+
+        self.nn_input_formed = True
         
         if debug_img:
             self.logger.info("NN_INPUT {}".format(self.nn_input))                              
@@ -223,12 +226,14 @@ class HumanPoseEstimationROS():
         
         while not rospy.is_shutdown(): 
 
-            if self.first_img_reciv: 
+            if (self.first_img_reciv and self.nn_input_formed): 
+                
                 start_time = rospy.Time.now().to_sec()
                 # Convert ROS Image to PIL
                 pil_img = PILImage.fromarray(self.org_img.astype('uint8'), 'RGB')
                 
                 # Get NN Output
+                print(type(self.nn_input))
                 output = self.model(self.nn_input)
 
                 # Heatmaps
