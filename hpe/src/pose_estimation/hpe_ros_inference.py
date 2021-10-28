@@ -48,16 +48,12 @@ class HumanPoseEstimationROS():
 
         rospy.init_node("hpe_simplebaselines")
         
-        rospy.loginfo("hpe rate is: {}".format(frequency))
         self.rate = rospy.Rate(int(frequency))
 
         # Update configuration file
         update_config(args.cfg)
         reset_config(config, args)
         self.config = config
-
-        # Initialize provided logger
-        #Self.logger, final_output_dir, tb_log_dir = create_logger(config, args.cfg, 'valid')
 
         # Legacy CUDNN --> probably not necessary 
         cudnn.benchmark = config.CUDNN.BENCHMARK
@@ -67,17 +63,14 @@ class HumanPoseEstimationROS():
         self.model_ready = False
         self.first_img_reciv = False
         self.nn_input_formed = False
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
 
         rospy.loginfo("[HPE-SimpleBaselines] Loading model")
         self.model = self._load_model(config)
         rospy.loginfo("[HPE-SimpleBaselines] Loaded model...")
         self.model_ready = True
 
-        self.multiple_GPUs = False
-        if self.multiple_GPUs:
-            gpus = [int(i) for i in config.GPUS.split(',')]
-            rospy.loginfo("Detected GPUS: {}".format(gpus))
-            model = torch.nn.DataParallel(model, device_ids=gpus).cuda()
 
         # Initialize subscribers/publishers
         self._init_publishers()
@@ -117,7 +110,9 @@ class HumanPoseEstimationROS():
             model_state_file = os.path.join(final_output_dir,
                                         'final_state.pth.tar')
             rospy.loginfot('=> loading model from {}'.format(model_state_file))
-            model.load_state_dict(torch.load(model_state_file))           
+            model.load_state_dict(torch.load(model_state_file))
+
+        model.to(self.device)           
         
         return model
 
@@ -164,7 +159,7 @@ class HumanPoseEstimationROS():
         self.scale = numpy.array([1, 1], dtype=numpy.float32) 
         
         # Transform img to 
-        self.nn_input = transform(self.cam_img).unsqueeze(0)   
+        self.nn_input = transform(self.cam_img).unsqueeze(0).to(self.device)   
 
         self.nn_input_formed = True
         
@@ -174,7 +169,6 @@ class HumanPoseEstimationROS():
         duration = rospy.Time.now().to_sec() - start_time 
         #rospy.loginfo("Duration of image_cb is: {}".format(duration)) # max --> 0.01s
                          
-
 
     def darknet_cb(self, darknet_boxes):
         
@@ -212,7 +206,6 @@ class HumanPoseEstimationROS():
         if center[0] != -1:
             scale = scale * 1.25
 
-
         r = 0
         trans = get_affine_transform(center, scale, r, config.MODEL.IMAGE_SIZE)
         scaled_img = cv2.warpAffine(
@@ -225,7 +218,7 @@ class HumanPoseEstimationROS():
 
         return scaled_img, center, scale
 
-    
+    #https://www.ros.org/news/2018/09/roscon-2017-determinism-in-ros---or-when-things-break-sometimes-and-how-to-fix-it----ingo-lutkebohle.html
     def run(self):
 
         self.first = True
@@ -237,22 +230,19 @@ class HumanPoseEstimationROS():
 
             if (self.first_img_reciv and self.nn_input_formed): 
 
-                rospy.loginfo("HPE run")
-                
+               
                 start_time = rospy.Time.now().to_sec()
-                # Convert ROS Image to PIL
                 
+                # Convert ROS Image to PIL 
                 start_time1 = rospy.Time.now().to_sec()
                 pil_img = PILImage.fromarray(self.org_img.astype('uint8'), 'RGB')
-                rospy.loginfo("Conversion to PIL Image from numpy: {}".format(rospy.Time.now().to_sec() - start_time1))
+                rospy.logdebug("Conversion to PIL Image from numpy: {}".format(rospy.Time.now().to_sec() - start_time1))
                 
                 # Get NN Output ## TODO: Check if this could be made shorter :) 
                 rospy.logdebug(type(self.nn_input))
                 start_time2 = rospy.Time.now().to_sec()
-                output = self.model(self.nn_input)
-                rospy.loginfo("NN inference1 duration: {}".format(rospy.Time.now().to_sec() - start_time2))
-
-
+                output = self.model(self.nn_input) 
+                rospy.logdebug("NN inference1 duration: {}".format(rospy.Time.now().to_sec() - start_time2))
 
                 # Heatmaps
                 start_time3 = rospy.Time.now().to_sec()
@@ -260,7 +250,7 @@ class HumanPoseEstimationROS():
                 # Get predictions                
                 #preds, maxvals = get_final_preds(config, batch_heatmaps, self.center, self.scale)
                 preds, maxvals = get_max_preds(batch_heatmaps)
-                rospy.loginfo("NN inference2 duration: {}".format(rospy.Time.now().to_sec() - start_time3))
+                rospy.logdebug("NN inference2 duration: {}".format(rospy.Time.now().to_sec() - start_time3))
 
                 # Heatmap size is 88x88, so this scales predictions to image size 
                 for pred in preds[0]:
@@ -298,6 +288,7 @@ class HumanPoseEstimationROS():
 
     @staticmethod
     def draw_stickman(img, predictions):
+        
 
         draw  = ImageDraw.Draw(img)
 
