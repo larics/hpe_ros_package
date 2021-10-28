@@ -47,6 +47,8 @@ class uavController:
     def pred_cb(self, converted_preds):
         preds = []
 
+        start_time = rospy.Time().now().to_sec()
+
         # Why do we use switcher? 
         switcher = False
         for pred in converted_preds.data:
@@ -132,9 +134,15 @@ class uavController:
                 if lhand[0] > self.x_deadzone[0] and lhand[1] < self.x_deadzone[1] and lhand[1] > self.y_deadzone[0] and lhand[1] < self.y_deadzone[1]:
                     rospy.loginfo("Started!")
                     self.started = True
+
+
+        duration = rospy.Time.now().to_sec() - start_time
+        rospy.loginfo("Duration of pred_cb is: {}".format(duration))
         
      
     def stickman_cb(self, stickman_img):
+        
+        start_time = rospy.Time().now().to_sec()
         # Convert ROS Image to PIL
         img = numpy.frombuffer(stickman_img.data, dtype=numpy.uint8).reshape(stickman_img.height, stickman_img.width, -1)
         img = PILImage.fromarray(img.astype('uint8'), 'RGB')
@@ -149,18 +157,20 @@ class uavController:
         draw.rectangle([(self.rotation_area[0], self.height_deadzone[0]), (self.rotation_area[1], self.height_deadzone[1])], outline ="red", width=2)
         draw.rectangle([(self.rotation_deadzone[0], self.height_area[0]), (self.rotation_deadzone[1], self.height_area[1])], outline ="red", width=2)
         draw.rectangle([(self.rotation_area[0], self.height_area[0]), (self.rotation_area[1], self.height_area[1])], outline ="green", width=2)
+       
         # Text for changing UAV height and yaw
-        # draw.text((self.x_area[0] + offset_x, self.y_area[0]), "UP", font=self.font)
-        # draw.text((self.x_area[0] + offset_x, self.y_area[1]), "DOWN", font=self.font)
-        # draw.text(((self.x_area[0] + self.x_area[1])/2, self.y_area[0] - offset_y), "L", font=self.font)
-        # draw.text(((self.x_area[0] + self.x_area[1])/2, self.y_area[1] + offset_y), "R", font=self.font)
+        offset_x = 2; offset_y = 2; 
+        draw.text((self.x_area[0] + offset_x, self.y_area[0]), "UP", font=self.font)
+        draw.text((self.x_area[0] + offset_x, self.y_area[1]), "DOWN", font=self.font)
+        draw.text(((self.x_area[0] + self.x_area[1])/2, self.y_area[0] - offset_y), "L", font=self.font)
+        draw.text(((self.x_area[0] + self.x_area[1])/2, self.y_area[1] + offset_y), "R", font=self.font)
 
         # Rectangles for movement left-right and forward-backward
         draw.rectangle([(self.x_area[0], self.y_deadzone[0]), (self.x_area[1], self.y_deadzone[1])], outline ="red", width=2)
         draw.rectangle([(self.x_deadzone[0], self.y_area[0]), (self.x_deadzone[1], self.y_area[1])], outline ="red", width=2)
         draw.rectangle([(self.x_area[0], self.y_area[0]), (self.x_area[1], self.y_area[1])], outline="green", width=2)
+        
         # Text for moving UAV forward and backward 
-        offset_x = 2; offset_y = 2; 
         draw.text((self.x_area[0] - offset_x, self.y_area[0]), "FWD", font=self.font)
         draw.text((self.x_area[0] + offset_x, self.y_area[1]), "BWD", font=self.font)
         draw.text(((self.x_area[0] + self.x_area[1])/2, self.y_area[0] - offset_y), "L", font=self.font)
@@ -171,11 +181,14 @@ class uavController:
         rospy.loginfo("Publishing stickman with zones!")
         self.stickman_area_pub.publish(ros_msg)
 
+        duration = rospy.Time().now().to_sec() - start_time
+        rospy.loginfo("stickman_cb duration is: {}".format(duration))
+
 
     def run(self): 
-        rospy.spin()
+        #rospy.spin()
         while not rospy.is_shutdown():   
-            rospy.loginfo("Running UAV control...")  
+            rospy.loginfo("CTL run")  
             self.rate.sleep()
     
     
@@ -191,9 +204,7 @@ class uavController:
         msg.step = 3 * img.width
         msg.data = numpy.array(img).tobytes()
         return msg
-
-
-        
+    
 
 if __name__ == '__main__':
 

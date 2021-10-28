@@ -48,7 +48,8 @@ class HumanPoseEstimationROS():
 
         rospy.init_node("hpe_simplebaselines")
         
-        self.rate = rospy.Rate(frequency)
+        rospy.loginfo("hpe rate is: {}".format(frequency))
+        self.rate = rospy.Rate(int(frequency))
 
         # Update configuration file
         update_config(args.cfg)
@@ -56,7 +57,7 @@ class HumanPoseEstimationROS():
         self.config = config
 
         # Initialize provided logger
-        self.logger, final_output_dir, tb_log_dir = create_logger(config, args.cfg, 'valid')
+        #Self.logger, final_output_dir, tb_log_dir = create_logger(config, args.cfg, 'valid')
 
         # Legacy CUDNN --> probably not necessary 
         cudnn.benchmark = config.CUDNN.BENCHMARK
@@ -67,9 +68,9 @@ class HumanPoseEstimationROS():
         self.first_img_reciv = False
         self.nn_input_formed = False
 
-        self.logger.info("[HPE-SimpleBaselines] Loading model")
+        rospy.loginfo("[HPE-SimpleBaselines] Loading model")
         self.model = self._load_model(config)
-        self.logger.info("[HPE-SimpleBaselines] Loaded model..")
+        rospy.loginfo("[HPE-SimpleBaselines] Loaded model...")
         self.model_ready = True
 
         self.multiple_GPUs = False
@@ -101,35 +102,39 @@ class HumanPoseEstimationROS():
 
     def _load_model(self, config):
         
-        print("Model name is: {}".format(config.MODEL.NAME))
+        rospy.loginfo("Model name is: {}".format(config.MODEL.NAME))
         model = eval('models.' + config.MODEL.NAME + '.get_pose_net')(
         config, is_train=False)
 
-        self.logger.info("Passed config is: {}".format(config))
-        self.logger.info("config.TEST.MODEL.FILE")
+        rospy.loginfo("Passed config is: {}".format(config))
+        rospy.loginfo("config.TEST.MODEL.FILE")
 
         if config.TEST.MODEL_FILE:
             model_state_file = config.TEST.MODEL_FILE
-            print('=> loading model from {}'.format(config.TEST.MODEL_FILE))
+            rospy.loginfo('=> loading model from {}'.format(config.TEST.MODEL_FILE))
             model.load_state_dict(torch.load(config.TEST.MODEL_FILE))
         else:
             model_state_file = os.path.join(final_output_dir,
                                         'final_state.pth.tar')
-            print('=> loading model from {}'.format(model_state_file))
+            rospy.loginfot('=> loading model from {}'.format(model_state_file))
             model.load_state_dict(torch.load(model_state_file))           
         
         return model
 
     def image_cb(self, msg):
 
+        start_time = rospy.Time.now().to_sec()
+
+        rospy.loginfo("")
+
         self.first_img_reciv = True
 
         debug_img = False
         if debug_img:
-            self.logger.info("Image width: {}".format(msg.width))
-            self.logger.info("Image height: {}".format(msg.height))
-            self.logger.info("Data is: {}".format(len(msg.data)))
-            self.logger.info("Input shape is: {}".format(input.shape))
+            rospy.loginfo("Image width: {}".format(msg.width))
+            rospy.loginfo("Image height: {}".format(msg.height))
+            rospy.loginfo("Data is: {}".format(len(msg.data)))
+            rospy.loginfo("Input shape is: {}".format(input.shape))
 
         # Transform img to numpy array        
         self.org_img = numpy.frombuffer(msg.data, dtype=numpy.uint8).reshape(msg.height, msg.width, -1)
@@ -164,7 +169,11 @@ class HumanPoseEstimationROS():
         self.nn_input_formed = True
         
         if debug_img:
-            self.logger.info("NN_INPUT {}".format(self.nn_input))                              
+            rospy.loginfo("NN_INPUT {}".format(self.nn_input))             
+
+        duration = rospy.Time.now().to_sec() - start_time 
+        #rospy.loginfo("Duration of image_cb is: {}".format(duration)) # max --> 0.01s
+                         
 
 
     def darknet_cb(self, darknet_boxes):
@@ -227,35 +236,42 @@ class HumanPoseEstimationROS():
         while not rospy.is_shutdown(): 
 
             if (self.first_img_reciv and self.nn_input_formed): 
+
+                rospy.loginfo("HPE run")
                 
                 start_time = rospy.Time.now().to_sec()
                 # Convert ROS Image to PIL
-                pil_img = PILImage.fromarray(self.org_img.astype('uint8'), 'RGB')
                 
-                # Get NN Output
-                print(type(self.nn_input))
+                start_time1 = rospy.Time.now().to_sec()
+                pil_img = PILImage.fromarray(self.org_img.astype('uint8'), 'RGB')
+                rospy.loginfo("Conversion to PIL Image from numpy: {}".format(rospy.Time.now().to_sec() - start_time1))
+                
+                # Get NN Output ## TODO: Check if this could be made shorter :) 
+                rospy.logdebug(type(self.nn_input))
+                start_time2 = rospy.Time.now().to_sec()
                 output = self.model(self.nn_input)
+                rospy.loginfo("NN inference1 duration: {}".format(rospy.Time.now().to_sec() - start_time2))
+
+
 
                 # Heatmaps
+                start_time3 = rospy.Time.now().to_sec()
                 batch_heatmaps = output.cpu().detach().numpy()
-                self.logger.info("Heatmap output: {}" +str(batch_heatmaps.shape))
-
                 # Get predictions                
                 #preds, maxvals = get_final_preds(config, batch_heatmaps, self.center, self.scale)
                 preds, maxvals = get_max_preds(batch_heatmaps)
-                duration = rospy.Time.now().to_sec() - start_time
-                self.logger.info("[HpeSimpleBaselines] Inference duration is: {}".format(duration))
+                rospy.loginfo("NN inference2 duration: {}".format(rospy.Time.now().to_sec() - start_time3))
 
-                # Heatmap size is 88x88, so this scales predictions to image size
+                # Heatmap size is 88x88, so this scales predictions to image size 
                 for pred in preds[0]:
                     pred[0] = pred[0]  * (640/88)
                     pred[1] = pred[1]  * (480/88)
-                self.logger.info(str(preds[0][0][0]) + "   " + str(preds[0][0][1]))
+                rospy.logdebug(str(preds[0][0][0]) + "   " + str(preds[0][0][1]))
                 
-                self.logger.info("Preds are: {}".format(preds))     
-                self.logger.info("Preds shape is: {}".format(preds.shape))
+                rospy.logdebug("Preds are: {}".format(preds))     
+                rospy.logdebug("Preds shape is: {}".format(preds.shape))
                 # Preds shape is [1, 16, 2] (or num persons is first dim)
-                self.logger.info("Preds shape is: {}".format(preds[0].shape))
+                rospy.logdebug("Preds shape is: {}".format(preds[0].shape))
 
                 # Draw stickman
                 stickman = HumanPoseEstimationROS.draw_stickman(pil_img, preds[0])
@@ -271,8 +287,14 @@ class HumanPoseEstimationROS():
                 
                 self.image_pub.publish(stickman_ros_msg)
                 self.pred_pub.publish(preds_ros_msg)
+
+                duration = rospy.Time.now().to_sec() - start_time
+                rospy.loginfo("Run duration is: {}".format(duration))
+
+
             
             self.rate.sleep()
+            
 
     @staticmethod
     def draw_stickman(img, predictions):
