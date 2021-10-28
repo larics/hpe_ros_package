@@ -4,9 +4,8 @@ import sys
 from geometry_msgs.msg import Pose
 from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import Image
-from PIL import ImageDraw
+from PIL import ImageDraw, ImageOps, ImageFont
 from PIL import Image as PILImage
-from PIL import ImageOps
 import cv2
 import numpy
 
@@ -29,26 +28,26 @@ class uavController:
         self.stickman_sub = rospy.Subscriber("stickman", Image, self.stickman_cb, queue_size=1)
         self.stickman_area_pub = rospy.Publisher("/stickman_cont_area", Image, queue_size=1)
 
-        # Config for control areas
+        # Config for control areas 
         self.height_area = [50, 350]
         self.height_deadzone = [180, 220]
-
         self.rotation_area = [30, 250]
-        self.rotation_deadzone = [120, 160]
-        
+        self.rotation_deadzone = [120, 160]        
         self.x_area = [390, 610]
         self.x_deadzone = [480, 520]
-
         self.y_area = [50, 350]
         self.y_deadzone = [180, 220]
+        self.font = ImageFont.load_default()
 
         self.started = False
-        print("Frequency is: {}".format(frequency))
-        self.rate = rospy.Rate(int(frequency))        
+        self.rate = rospy.Rate(int(frequency))     
+        rospy.loginfo("Initialized!")   
         
     
     def pred_cb(self, converted_preds):
         preds = []
+
+        # Why do we use switcher? 
         switcher = False
         for pred in converted_preds.data:
             if switcher is False:            
@@ -58,7 +57,7 @@ class uavController:
             switcher = not switcher
         
         # Convert predictions into drone positions. Goes from [1, movement_available]
-        # NOTE: image is mirrored, so left control area in preds corresponds to the right hand movements
+        # NOTE: image is mirrored, so left control area in preds corresponds to the right hand movements 
         pose = Pose()
         pose.position.z = 2
         pose.position.y = 0
@@ -66,6 +65,7 @@ class uavController:
         pose.orientation.z = 0
         movement_available = 2  
 
+        # Use info about right hand and left hand 
         rhand = preds[10]
         lhand = preds[15]
         
@@ -130,7 +130,7 @@ class uavController:
             self.pose_pub.publish(pose)
             if rhand[0] > self.rotation_deadzone[0] and rhand[0] < self.rotation_deadzone[1] and rhand[1] > self.height_deadzone[0] and rhand[0] < self.height_deadzone[1]:
                 if lhand[0] > self.x_deadzone[0] and lhand[1] < self.x_deadzone[1] and lhand[1] > self.y_deadzone[0] and lhand[1] < self.y_deadzone[1]:
-                    print("Started!")
+                    rospy.loginfo("Started!")
                     self.started = True
         
      
@@ -138,6 +138,9 @@ class uavController:
         # Convert ROS Image to PIL
         img = numpy.frombuffer(stickman_img.data, dtype=numpy.uint8).reshape(stickman_img.height, stickman_img.width, -1)
         img = PILImage.fromarray(img.astype('uint8'), 'RGB')
+
+        # Mirror image here 
+        img = ImageOps.mirror(img) 
         
         # Draw rectangles which represent areas for control
         draw = ImageDraw.Draw(img)
@@ -146,24 +149,33 @@ class uavController:
         draw.rectangle([(self.rotation_area[0], self.height_deadzone[0]), (self.rotation_area[1], self.height_deadzone[1])], outline ="red", width=2)
         draw.rectangle([(self.rotation_deadzone[0], self.height_area[0]), (self.rotation_deadzone[1], self.height_area[1])], outline ="red", width=2)
         draw.rectangle([(self.rotation_area[0], self.height_area[0]), (self.rotation_area[1], self.height_area[1])], outline ="green", width=2)
+        # Text for changing UAV height and yaw
+        # draw.text((self.x_area[0] + offset_x, self.y_area[0]), "UP", font=self.font)
+        # draw.text((self.x_area[0] + offset_x, self.y_area[1]), "DOWN", font=self.font)
+        # draw.text(((self.x_area[0] + self.x_area[1])/2, self.y_area[0] - offset_y), "L", font=self.font)
+        # draw.text(((self.x_area[0] + self.x_area[1])/2, self.y_area[1] + offset_y), "R", font=self.font)
 
         # Rectangles for movement left-right and forward-backward
         draw.rectangle([(self.x_area[0], self.y_deadzone[0]), (self.x_area[1], self.y_deadzone[1])], outline ="red", width=2)
         draw.rectangle([(self.x_deadzone[0], self.y_area[0]), (self.x_deadzone[1], self.y_area[1])], outline ="red", width=2)
-        draw.rectangle([(self.x_area[0], self.y_area[0]), (self.x_area[1], self.y_area[1])], outline ="green", width=2)
+        draw.rectangle([(self.x_area[0], self.y_area[0]), (self.x_area[1], self.y_area[1])], outline="green", width=2)
+        # Text for moving UAV forward and backward 
+        offset_x = 2; offset_y = 2; 
+        draw.text((self.x_area[0] - offset_x, self.y_area[0]), "FWD", font=self.font)
+        draw.text((self.x_area[0] + offset_x, self.y_area[1]), "BWD", font=self.font)
+        draw.text(((self.x_area[0] + self.x_area[1])/2, self.y_area[0] - offset_y), "L", font=self.font)
+        draw.text(((self.x_area[0] + self.x_area[1])/2, self.y_area[1] + offset_y), "R", font=self.font)
 
-        #draw.rectangle([(80, 180), (200, 220)], outline ="red", width=2)
-        #draw.rectangle([(80, 50), (200, 350)], outline ="green", width=2)
-
-        img = ImageOps.mirror(img)        
+        # Check what this mirroring does here! 
         ros_msg = uavController.convert_pil_to_ros_img(img) # Find better way to do this
+        rospy.loginfo("Publishing stickman with zones!")
         self.stickman_area_pub.publish(ros_msg)
 
 
     def run(self): 
         rospy.spin()
         while not rospy.is_shutdown():   
-            print("Running UAV control...")  
+            rospy.loginfo("Running UAV control...")  
             self.rate.sleep()
     
     
