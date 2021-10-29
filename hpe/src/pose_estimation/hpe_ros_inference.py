@@ -84,6 +84,7 @@ class HumanPoseEstimationROS():
         self.w = None
         self.h = None
 
+
     def _init_subscribers(self):
         self.camera_sub = rospy.Subscriber("usb_camera/image_raw", Image, self.image_cb, queue_size=1)
         #self.darknet_sub = rospy.Subscriber("/darknet_ros/bounding_boxes", BoundingBoxes, self.darknet_cb, queue_size=1)
@@ -119,8 +120,6 @@ class HumanPoseEstimationROS():
     def image_cb(self, msg):
 
         start_time = rospy.Time.now().to_sec()
-
-        rospy.loginfo("")
 
         self.first_img_reciv = True
 
@@ -279,7 +278,9 @@ class HumanPoseEstimationROS():
                 self.pred_pub.publish(preds_ros_msg)
 
                 duration = rospy.Time.now().to_sec() - start_time
-                rospy.loginfo("Run duration is: {}".format(duration))
+                debug_runtime = False
+                if debug_runtime:
+                    rospy.loginfo("Run duration is: {}".format(duration))
 
 
             
@@ -294,10 +295,15 @@ class HumanPoseEstimationROS():
 
         point_r = 2
 
+        ctl_indices = [10, 15]
         for i in range (0, len(predictions)): 
-            draw.ellipse([(predictions[i][0] - point_r, predictions[i][1] - point_r), (predictions[i][0] + point_r, predictions[i][1] + point_r)], fill=(255, 0, 0), width=2*point_r)
+            if i  in ctl_indices:
+                fill_ = "red"
+            else:
+                fill_ = (153, 255, 255)
+            draw.ellipse([(predictions[i][0] - point_r, predictions[i][1] - point_r), (predictions[i][0] + point_r, predictions[i][1] + point_r)], fill=fill_, width=2*point_r)
             if i < len(predictions) - 1 and i != 5 and i != 9:      
-                draw.line([(predictions[i][0], predictions[i][1]), (predictions[i + 1][0], predictions[i + 1][1])], fill="green", width=2)
+                draw.line([(predictions[i][0], predictions[i][1]), (predictions[i + 1][0], predictions[i + 1][1])], fill=(153, 255, 255), width=2)
 
 
         return img

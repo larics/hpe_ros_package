@@ -1,13 +1,19 @@
 #!/opt/conda/bin/python3
 import rospy
+import rospkg
 import sys
+import cv2
+import numpy
+
 from geometry_msgs.msg import Pose
 from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import Image
+
 from PIL import ImageDraw, ImageOps, ImageFont
 from PIL import Image as PILImage
-import cv2
-import numpy
+
+from hpe_ros_inference import HumanPoseEstimationROS
+
 
 class uavController:
     def __init__(self, frequency):
@@ -37,7 +43,7 @@ class uavController:
         self.x_deadzone = [480, 520]
         self.y_area = [50, 350]
         self.y_deadzone = [180, 220]
-        self.font = ImageFont.load_default()
+        self.font = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/hpe/include/arial.ttf", 20, encoding="unic")
 
         self.started = False
         self.rate = rospy.Rate(int(frequency))     
@@ -151,30 +157,43 @@ class uavController:
         img = ImageOps.mirror(img) 
         
         # Draw rectangles which represent areas for control
-        draw = ImageDraw.Draw(img)
+        draw = ImageDraw.Draw(img, "RGBA")
         
         # Rectangles for height and rotation
-        draw.rectangle([(self.rotation_area[0], self.height_deadzone[0]), (self.rotation_area[1], self.height_deadzone[1])], outline ="red", width=2)
-        draw.rectangle([(self.rotation_deadzone[0], self.height_area[0]), (self.rotation_deadzone[1], self.height_area[1])], outline ="red", width=2)
-        draw.rectangle([(self.rotation_area[0], self.height_area[0]), (self.rotation_area[1], self.height_area[1])], outline ="green", width=2)
+        draw.rectangle([(self.rotation_area[0], self.height_deadzone[0]), (self.rotation_area[1], self.height_deadzone[1])],
+                         fill=(178,34,34, 100), width=2)
+        draw.rectangle([(self.rotation_deadzone[0], self.height_area[0]), (self.rotation_deadzone[1], self.height_area[1])],
+                         fill=(178,34,34, 100), width=2)
+        #draw.rectangle([(self.rotation_area[0], self.height_area[0]), (self.rotation_area[1], self.height_area[1])], outline ="green", width=2)
        
         # Text for changing UAV height and yaw
         offset_x = 2; offset_y = 2; 
-        draw.text((self.x_area[0] + offset_x, self.y_area[0]), "UP", font=self.font)
-        draw.text((self.x_area[0] + offset_x, self.y_area[1]), "DOWN", font=self.font)
-        draw.text(((self.x_area[0] + self.x_area[1])/2, self.y_area[0] - offset_y), "L", font=self.font)
-        draw.text(((self.x_area[0] + self.x_area[1])/2, self.y_area[1] + offset_y), "R", font=self.font)
+        #draw.text((self.x_area[0] + offset_x, self.y_area[0]), "UP", font=self.font)
+        #draw.text((self.x_area[0] + offset_x, self.y_area[1]), "DOWN", font=self.font)
+        up_size = uavController.get_text_dimensions("UP", self.font); down_size = uavController.get_text_dimensions("DOWN", self.font)
+        yp_size = uavController.get_text_dimensions("Y+", self.font); ym_size = uavController.get_text_dimensions("Y-", self.font)
+        draw.text(((self.rotation_area[0] + self.rotation_area[1])/2 - up_size[0]/2, self.height_area[0]- up_size[1] ), "UP", font=self.font)
+        draw.text(((self.rotation_area[0] + self.rotation_area[1])/2 - down_size[0]/2, self.height_area[1]), "DOWN", font=self.font)
+        draw.text(((self.rotation_area[0] - ym_size[0], (self.height_area[0] + self.height_area[1])/2 - ym_size[1]/2)), "Y-", font=self.font)
+        draw.text(((self.rotation_area[1], (self.height_area[0] + self.height_area[1])/2 - yp_size[1]/2)), "Y+", font=self.font)
 
         # Rectangles for movement left-right and forward-backward
-        draw.rectangle([(self.x_area[0], self.y_deadzone[0]), (self.x_area[1], self.y_deadzone[1])], outline ="red", width=2)
-        draw.rectangle([(self.x_deadzone[0], self.y_area[0]), (self.x_deadzone[1], self.y_area[1])], outline ="red", width=2)
-        draw.rectangle([(self.x_area[0], self.y_area[0]), (self.x_area[1], self.y_area[1])], outline="green", width=2)
+        draw.rectangle([(self.x_area[0], self.y_deadzone[0]), (self.x_area[1], self.y_deadzone[1])],
+                        fill=(178,34,34, 100), width=2)
+        draw.rectangle([(self.x_deadzone[0], self.y_area[0]), (self.x_deadzone[1], self.y_area[1])],
+                        fill=(178,34,34, 100), width=2)
+        #draw.rectangle([(self.x_area[0], self.y_area[0]), (self.x_area[1], self.y_area[1])], outline="green", width=2)
         
         # Text for moving UAV forward and backward 
-        draw.text((self.x_area[0] - offset_x, self.y_area[0]), "FWD", font=self.font)
-        draw.text((self.x_area[0] + offset_x, self.y_area[1]), "BWD", font=self.font)
-        draw.text(((self.x_area[0] + self.x_area[1])/2, self.y_area[0] - offset_y), "L", font=self.font)
-        draw.text(((self.x_area[0] + self.x_area[1])/2, self.y_area[1] + offset_y), "R", font=self.font)
+        #draw.text((self.x_area[0] - offset_x, self.y_area[0]), "FWD", font=self.font)
+        #draw.text((self.x_area[0] + offset_x, self.y_area[1]), "BWD", font=self.font)
+        fwd_size = uavController.get_text_dimensions("FWD", self.font); bwd_size = uavController.get_text_dimensions("BWD", self.font)
+        l_size = uavController.get_text_dimensions("L", self.font); r_size = uavController.get_text_dimensions("R", self.font)
+        draw.text(((self.x_area[0] + self.x_area[1])/2 - fwd_size[0]/2, self.y_area[0] - fwd_size[1]), "FWD", font=self.font)
+        draw.text(((self.x_area[0] + self.x_area[1])/2 - bwd_size[0]/2, self.y_area[1]), "BWD", font=self.font)
+        draw.text(((self.x_area[0] - l_size[0], (self.y_area[0] + self.y_area[1])/2 - r_size[1]/2)), "L", font=self.font)
+        draw.text(((self.x_area[1], (self.y_area[0] + self.y_area[1])/2 - l_size[1]/2)), "R", font=self.font)
+
 
         # Check what this mirroring does here! 
         ros_msg = uavController.convert_pil_to_ros_img(img) # Find better way to do this
@@ -204,7 +223,16 @@ class uavController:
         msg.step = 3 * img.width
         msg.data = numpy.array(img).tobytes()
         return msg
-    
+
+    @staticmethod
+    def get_text_dimensions(text_string, font):
+
+        ascent, descent = font.getmetrics()
+        text_width = font.getmask(text_string).getbbox()[2]
+        text_height = font.getmask(text_string).getbbox()[3] + descent
+
+        return (text_width, text_height)
+        
 
 if __name__ == '__main__':
 

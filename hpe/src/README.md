@@ -18,3 +18,10 @@ To run, put a video in hpe_ros/pose_estimation/video/video001, and then from pos
 ```
 python camera_simulator.py  video/vid0123/
 ```
+
+# TODO: 
+ - [ ] Add instructions 
+ - [x] Add labels 
+ - [ ] Try bigger ResNets (test speed) 
+ - [ ] Add filtering 
+ - [ ] Enlarge control points 
