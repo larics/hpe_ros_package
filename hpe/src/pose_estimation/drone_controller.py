@@ -5,7 +5,7 @@ import sys
 import cv2
 import numpy
 
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Pose, PoseStamped
 from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import Image
 
@@ -20,21 +20,19 @@ class uavController:
 
 
         nn_init_time_sec = 10
-        rospy.init_node("uav_controller")
+        rospy.init_node("uav_controller", log_level=rospy.DEBUG)
         rospy.sleep(nn_init_time_sec)
 
         self.current_x = 0
         self.current_y = 0
         self.current_z = 1
         self.current_rot = 0
-        
-        # Publishers and subscribers
-        self.pose_pub = rospy.Publisher("uav/pose_ref", Pose, queue_size=1)
-        self.preds_sub = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
-        self.stickman_sub = rospy.Subscriber("stickman", Image, self.stickman_cb, queue_size=1)
-        self.stickman_area_pub = rospy.Publisher("/stickman_cont_area", Image, queue_size=1)
 
-        # Config for control areas 
+        self._init_publishers(); self._init_subscribers(); 
+
+        self.height = 480; self.width = 640; 
+
+        # Config for control areas --> TODO: Scale to width, height to be parametric depending on image resolution 
         self.height_area = [50, 350]
         self.height_deadzone = [180, 220]
         self.rotation_area = [30, 250]
@@ -47,9 +45,33 @@ class uavController:
 
         self.started = False
         self.rate = rospy.Rate(int(frequency))     
+
+        self.recv_pose_meas = False
+
         rospy.loginfo("Initialized!")   
+
+
+    def _init_publishers(self): 
+        
+        self.pose_pub = rospy.Publisher("uav/pose_ref", Pose, queue_size=1)
+        self.stickman_area_pub = rospy.Publisher("/stickman_cont_area", Image, queue_size=1)
+
+
+    def _init_subscribers(self): 
+
+        self.preds_sub = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
+        self.stickman_sub = rospy.Subscriber("stickman", Image, self.stickman_cb, queue_size=1)
+        self.current_pose_sub = rospy.Subscriber("uav/pose", PoseStamped, self.curr_pose_cb, queue_size=1)
         
     
+    def curr_pose_cb(self, msg):
+        
+        self.recv_pose_meas = True; 
+        self.current_pose = PoseStamped(); 
+        self.current_pose.header = msg.header
+        self.current_pose.pose.position = msg.pose.position
+        self.current_pose.pose.orientation = msg.pose.orientation
+
     def pred_cb(self, converted_preds):
         preds = []
 
@@ -66,76 +88,89 @@ class uavController:
         
         # Convert predictions into drone positions. Goes from [1, movement_available]
         # NOTE: image is mirrored, so left control area in preds corresponds to the right hand movements 
-        pose = Pose()
-        pose.position.z = 2
-        pose.position.y = 0
-        pose.position.x = 0
-        pose.orientation.z = 0
-        movement_available = 2  
+        pose_cmd = Pose()        
+        if self.recv_pose_meas and not self.started:
+            rospy.logdebug("Setting up initial value!")
+            pose_cmd.position.x = self.current_pose.pose.position.x
+            pose_cmd.position.y = self.current_pose.pose.position.y
+            pose_cmd.position.z = self.current_pose.pose.position.z
+            pose_cmd.orientation.z = self.current_pose.pose.orientation.z
+
+        elif self.recv_pose_meas and self.started: 
+            try:
+                pose_cmd = self.prev_pose_cmd  # Doesn't exist in the situation where we've started the algorithm however, never entered some of the zones!
+            except:
+                pose_cmd.position = self.current_pose.pose.position
+                pose_cmd.orientation = self.current_pose.pose.orientation
 
         # Use info about right hand and left hand 
         rhand = preds[10]
         lhand = preds[15]
+
+        increase = 0.03; decrease = 0.03; 
         
         if self.started:
+            self.changed_cmd = False
+            # Current predictions
+            rospy.logdebug("Left hand: {}".format(lhand))
+            rospy.logdebug("Right hand: {}".format(rhand))
+             
             # Converter for height and rotation. Right hand is [10]
-            if rhand[0] > self.rotation_area[0] and rhand[0] < self.rotation_area[1]:                                       # If the hand is inside the green box
-                if rhand[1] > self.height_deadzone[1] and rhand[1] < self.height_area[1]:                                   # If the hand is between the bottom green line and the bottom red deadzone line
-                    pose.position.z = (self.height_area[1] - rhand[1]) / (self.height_area[1] - self.height_deadzone[1])    # Scale pixels to 1
-                    pose.position.z = 1 + (pose.position.z * movement_available / 2)                                        # Additional scaling to fit [1, 1 + movement_available/2]
+            # Reversing mirroring operation!
+            lhand[0] = abs(lhand[0] - self.width)
+            rhand[0] = abs(rhand[0] - self.width)
+            if self.check_if_in_range(lhand[0], self.rotation_deadzone[0], self.rotation_deadzone[1]):                                      
+                rospy.logdebug("Left hand inside of rotation area!")
+                if self.check_if_in_range(lhand[1], self.height_area[0], self.height_deadzone[0]):
+                    pose_cmd.position.z += increase
+                    rospy.logdebug("Increasing z!")
+                elif self.check_if_in_range(lhand[1], self.height_deadzone[1], self.height_area[1]):
+                    pose_cmd.position.z -= decrease  
+                    rospy.logdebug("Decreasing z!")
+     
+            if self.check_if_in_range(lhand[1], self.height_area[0], self.height_area[1]):
+                rospy.logdebug("Left hand inside of the height deadzone!")   
+                if lhand[0] > self.rotation_deadzone[0] and lhand[0] < self.rotation_area[1]:                    
+                    pose_cmd.orientation.z += increase
+                    rospy.logdebug("Increasing yaw!")
 
-                elif rhand[1] < self.height_deadzone[0] and rhand[1] > self.height_area[0]:
-                    pose.position.z = (rhand[1] - self.height_area[0]) / (self.height_deadzone[0] - self.height_area[0])
-                    pose.position.z = 5 - (1 + (pose.position.z * movement_available / 2) + movement_available / 2)
-                else:
-                    pose.position.z = 2
+                elif lhand[0] < self.rotation_deadzone[1] and lhand[0] > self.rotation_area[0]:
+                    pose_cmd.orientation.z -= decrease
+                    rospy.logdebug("Decreasing yaw!")
+            
+            # Converter for x and y movements. Left hand is [15]   
+            #if self.check_if_in_range(abs(rhand[0] - self.width), self.x_area[0], self.x_area[1]):
+            #    rospy.logdebug("Right hand inside of x_area!")
+                #if rhand[1] > self.y_deadzone[1] and rhand[1] < self.y_area[1]:
+                #    pose_cmd.position.y += increase
+                #    rospy.logdebug("Increasing y!")
 
-                
-            if rhand[1] > self.height_area[0] and rhand[1] < self.height_area[1]:
-                if rhand[0] > self.rotation_deadzone[0] and rhand[0] < self.rotation_area[1]:
-                    pose.orientation.z = (self.rotation_area[1] - rhand[0]) / (self.rotation_area[1] - self.rotation_deadzone[1])
-                    pose.orientation.z = (pose.orientation.z * movement_available / 2)
+                #elif rhand[1] < self.y_deadzone[0] and rhand[1] > self.y_area[0]:
+                #    pose_cmd.position.y -= decrease         
+                #    rospy.logdebug("Decreasing y!")   
 
-                elif rhand[0] < self.rotation_deadzone[0] and rhand[0] > self.rotation_area[0]:
-                    pose.orientation.z = (rhand[0] - self.rotation_area[0]) / (self.rotation_deadzone[0] - self.rotation_area[0])
-                    pose.orientation.z = 4 - (1 + (pose.orientation.z * movement_available / 2) + movement_available / 2)
-                else:
-                    pose.orientation.z = 0
+            #if self.check_if_in_range(abs(rhand[1] - self.height), self.y_area[0], self.y_area[1]):
+            #    rospy.logdebug("Right hand inside of y area!")
+            #    if rhand[0] > self.x_deadzone[1] and rhand[1] < self.x_area[1]: 
+            #        pose_cmd.position.x += increase    
+            #        rospy.logdebug("Increasing x!")#
 
-
-            # Converter for x and y movements. Left hand is [15]
-            if lhand[0] > self.x_area[0] and lhand[0] < self.x_area[1]:
-                if lhand[1] > self.y_deadzone[1] and lhand[1] < self.y_area[1]:
-                    pose.position.y = (self.y_area[1] - lhand[1]) / (self.y_area[1] - self.y_deadzone[1])
-                    pose.position.y = pose.position.y * movement_available
-                    pose.position.y -= movement_available
-
-                elif lhand[1] < self.y_deadzone[0] and lhand[1] > self.y_area[0]:
-                    pose.position.y = (lhand[1] - self.y_area[0]) / (self.y_deadzone[0] - self.y_area[0])
-                    pose.position.y = (pose.position.y * movement_available)
-                    pose.position.y = movement_available - pose.position.y
+            # elif rhand[0] < self.x_deadzone[0] and rhand[0] > self.x_area[0]:
+            # pose_cmd.position.x -= decrease
+            #rospy.logdebug("Decreasing x!")            
             
 
-            if lhand[1] > self.y_area[0] and lhand[1] < self.y_area[1]:
-                if lhand[0] > self.x_deadzone[1] and lhand[1] < self.x_area[1]:           
-                    pose.position.x = (self.x_area[1] - lhand[0]) / (self.x_area[1] - self.x_deadzone[1])
-                    pose.position.x = pose.position.x * movement_available
-                    pose.position.x -= movement_available
-
-                elif lhand[0] < self.x_deadzone[0] and lhand[0] > self.x_area[0]:
-                    pose.position.x = (lhand[0] - self.x_area[0]) / (self.x_deadzone[0] - self.x_area[0])
-                    pose.position.x = (pose.position.x * movement_available)
-                    pose.position.x = movement_available - pose.position.x
-
-
-            pose.orientation.z = 0
-            print("x, y, z, rot:" + str(pose.position.x) + "," + str(pose.position.y) + "," + str(pose.position.z) + "," + str(pose.orientation.z))
-            self.pose_pub.publish(pose)
+            rospy.loginfo("x:{0} \t y: {1} \t , z: {2} \t , rot: {3} \t".format(round(pose_cmd.position.x, 3),
+                                                                                round(pose_cmd.position.y, 3),
+                                                                                round(pose_cmd.position.z, 3),
+                                                                                round(pose_cmd.orientation.z, 3)))
+            self.prev_pose_cmd = pose_cmd
+            self.pose_pub.publish(pose_cmd)
 
 
         # If not started yet, put both hand in the middle of the deadzones to start        
         else:
-            self.pose_pub.publish(pose)
+            # Good condition for starting 
             if rhand[0] > self.rotation_deadzone[0] and rhand[0] < self.rotation_deadzone[1] and rhand[1] > self.height_deadzone[0] and rhand[0] < self.height_deadzone[1]:
                 if lhand[0] > self.x_deadzone[0] and lhand[1] < self.x_deadzone[1] and lhand[1] > self.y_deadzone[0] and lhand[1] < self.y_deadzone[1]:
                     rospy.loginfo("Started!")
@@ -143,7 +178,8 @@ class uavController:
 
 
         duration = rospy.Time.now().to_sec() - start_time
-        rospy.loginfo("Duration of pred_cb is: {}".format(duration))
+        #rospy.loginfo("Duration of pred_cb is: {}".format(duration))
+
         
      
     def stickman_cb(self, stickman_img):
@@ -164,12 +200,9 @@ class uavController:
                          fill=(178,34,34, 100), width=2)
         draw.rectangle([(self.rotation_deadzone[0], self.height_area[0]), (self.rotation_deadzone[1], self.height_area[1])],
                          fill=(178,34,34, 100), width=2)
-        #draw.rectangle([(self.rotation_area[0], self.height_area[0]), (self.rotation_area[1], self.height_area[1])], outline ="green", width=2)
        
         # Text for changing UAV height and yaw
         offset_x = 2; offset_y = 2; 
-        #draw.text((self.x_area[0] + offset_x, self.y_area[0]), "UP", font=self.font)
-        #draw.text((self.x_area[0] + offset_x, self.y_area[1]), "DOWN", font=self.font)
         up_size = uavController.get_text_dimensions("UP", self.font); down_size = uavController.get_text_dimensions("DOWN", self.font)
         yp_size = uavController.get_text_dimensions("Y+", self.font); ym_size = uavController.get_text_dimensions("Y-", self.font)
         draw.text(((self.rotation_area[0] + self.rotation_area[1])/2 - up_size[0]/2, self.height_area[0]- up_size[1] ), "UP", font=self.font)
@@ -177,39 +210,48 @@ class uavController:
         draw.text(((self.rotation_area[0] - ym_size[0], (self.height_area[0] + self.height_area[1])/2 - ym_size[1]/2)), "Y-", font=self.font)
         draw.text(((self.rotation_area[1], (self.height_area[0] + self.height_area[1])/2 - yp_size[1]/2)), "Y+", font=self.font)
 
+        ######################################################################################################################################
         # Rectangles for movement left-right and forward-backward
         draw.rectangle([(self.x_area[0], self.y_deadzone[0]), (self.x_area[1], self.y_deadzone[1])],
                         fill=(178,34,34, 100), width=2)
         draw.rectangle([(self.x_deadzone[0], self.y_area[0]), (self.x_deadzone[1], self.y_area[1])],
                         fill=(178,34,34, 100), width=2)
-        #draw.rectangle([(self.x_area[0], self.y_area[0]), (self.x_area[1], self.y_area[1])], outline="green", width=2)
         
         # Text for moving UAV forward and backward 
-        #draw.text((self.x_area[0] - offset_x, self.y_area[0]), "FWD", font=self.font)
-        #draw.text((self.x_area[0] + offset_x, self.y_area[1]), "BWD", font=self.font)
         fwd_size = uavController.get_text_dimensions("FWD", self.font); bwd_size = uavController.get_text_dimensions("BWD", self.font)
         l_size = uavController.get_text_dimensions("L", self.font); r_size = uavController.get_text_dimensions("R", self.font)
         draw.text(((self.x_area[0] + self.x_area[1])/2 - fwd_size[0]/2, self.y_area[0] - fwd_size[1]), "FWD", font=self.font)
         draw.text(((self.x_area[0] + self.x_area[1])/2 - bwd_size[0]/2, self.y_area[1]), "BWD", font=self.font)
         draw.text(((self.x_area[0] - l_size[0], (self.y_area[0] + self.y_area[1])/2 - r_size[1]/2)), "L", font=self.font)
         draw.text(((self.x_area[1], (self.y_area[0] + self.y_area[1])/2 - l_size[1]/2)), "R", font=self.font)
-
+        ########################################################################################################################################
 
         # Check what this mirroring does here! 
         ros_msg = uavController.convert_pil_to_ros_img(img) # Find better way to do this
-        rospy.loginfo("Publishing stickman with zones!")
+        #rospy.loginfo("Publishing stickman with zones!")
         self.stickman_area_pub.publish(ros_msg)
 
         duration = rospy.Time().now().to_sec() - start_time
-        rospy.loginfo("stickman_cb duration is: {}".format(duration))
+        #rospy.loginfo("stickman_cb duration is: {}".format(duration))
 
 
     def run(self): 
         #rospy.spin()
         while not rospy.is_shutdown():   
-            rospy.loginfo("CTL run")  
+            #rospy.loginfo("CTL run")  
             self.rate.sleep()
     
+
+    def check_if_in_range(self, value, min_value, max_value): 
+
+        if (value >= min_value and value <= max_value): 
+            return True
+
+        else: 
+            return False 
+
+
+
     
     @staticmethod
     def convert_pil_to_ros_img(img):

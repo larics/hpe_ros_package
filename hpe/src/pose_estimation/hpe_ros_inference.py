@@ -33,7 +33,7 @@ from core.inference import get_final_preds, get_max_preds
 from utils.utils import create_logger
 from utils.transforms import get_affine_transform
 
-from PIL import ImageDraw
+from PIL import ImageDraw, ImageFont
 from PIL import Image as PILImage
 
 import dataset
@@ -83,6 +83,9 @@ class HumanPoseEstimationROS():
         self.y = None
         self.w = None
         self.h = None
+
+        # Initialize font
+        self.font = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/hpe/include/arial.ttf", 20, encoding="unic")
 
 
     def _init_subscribers(self):
@@ -227,8 +230,7 @@ class HumanPoseEstimationROS():
         
         while not rospy.is_shutdown(): 
 
-            if (self.first_img_reciv and self.nn_input_formed): 
-
+            if (self.first_img_reciv and self.nn_input_formed):
                
                 start_time = rospy.Time.now().to_sec()
                 
@@ -282,7 +284,6 @@ class HumanPoseEstimationROS():
                 if debug_runtime:
                     rospy.loginfo("Run duration is: {}".format(duration))
 
-
             
             self.rate.sleep()
             
@@ -293,15 +294,27 @@ class HumanPoseEstimationROS():
 
         draw  = ImageDraw.Draw(img)
 
-        point_r = 2
+        font_ = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/hpe/include/arial.ttf", 20, encoding="unic")
+
+
+        point_r = 4
 
         ctl_indices = [10, 15]
         for i in range (0, len(predictions)): 
             if i  in ctl_indices:
-                fill_ = "red"
+
+                if i == 10: 
+                    fill_ = "green"
+                    draw.text((predictions[i][0], predictions[i][1]), "R", font=font_)
+
+                if i == 15:
+                    fill_ = "red"
+                    draw.text((predictions[i][0], predictions[i][1]), "L", font=font_)
+
             else:
                 fill_ = (153, 255, 255)
             draw.ellipse([(predictions[i][0] - point_r, predictions[i][1] - point_r), (predictions[i][0] + point_r, predictions[i][1] + point_r)], fill=fill_, width=2*point_r)
+
             if i < len(predictions) - 1 and i != 5 and i != 9:      
                 draw.line([(predictions[i][0], predictions[i][1]), (predictions[i + 1][0], predictions[i + 1][1])], fill=(153, 255, 255), width=2)
 
