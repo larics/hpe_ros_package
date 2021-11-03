@@ -115,10 +115,10 @@ class uavController:
             rospy.logdebug("Left hand: {}".format(lhand))
             rospy.logdebug("Right hand: {}".format(rhand))
              
-            # Converter for height and rotation. Right hand is [10]
             # Reversing mirroring operation!
             lhand[0] = abs(lhand[0] - self.width)
             rhand[0] = abs(rhand[0] - self.width)
+
             if self.check_if_in_range(lhand[0], self.rotation_deadzone[0], self.rotation_deadzone[1]):                                      
                 rospy.logdebug("Left hand inside of rotation area!")
                 if self.check_if_in_range(lhand[1], self.height_area[0], self.height_deadzone[0]):
@@ -130,34 +130,34 @@ class uavController:
      
             if self.check_if_in_range(lhand[1], self.height_area[0], self.height_area[1]):
                 rospy.logdebug("Left hand inside of the height deadzone!")   
-                if lhand[0] > self.rotation_deadzone[0] and lhand[0] < self.rotation_area[1]:                    
-                    pose_cmd.orientation.z += increase
+                if (self.check_if_in_range(lhand[0], self.rotation_deadzone[0], self.rotation_area[1])):
+                    pose_cmd.orientation.z += increase # TODO: Generate orientation correctly for quaternion
                     rospy.logdebug("Increasing yaw!")
-
-                elif lhand[0] < self.rotation_deadzone[1] and lhand[0] > self.rotation_area[0]:
+                
+                elif(self.check_if_in_range(lhand[0], self.rotation_area[0], self.rotation_deadzone[1])):
                     pose_cmd.orientation.z -= decrease
                     rospy.logdebug("Decreasing yaw!")
             
             # Converter for x and y movements. Left hand is [15]   
-            #if self.check_if_in_range(abs(rhand[0] - self.width), self.x_area[0], self.x_area[1]):
-            #    rospy.logdebug("Right hand inside of x_area!")
-                #if rhand[1] > self.y_deadzone[1] and rhand[1] < self.y_area[1]:
-                #    pose_cmd.position.y += increase
-                #    rospy.logdebug("Increasing y!")
+            if self.check_if_in_range(rhand[0], self.x_area[0], self.x_area[1]):
 
-                #elif rhand[1] < self.y_deadzone[0] and rhand[1] > self.y_area[0]:
-                #    pose_cmd.position.y -= decrease         
-                #    rospy.logdebug("Decreasing y!")   
+                if (self.check_if_in_range(rhand[1], self.y_deadzone[1], self.y_area[1])):
+                    pose_cmd.position.y += increase
+                    rospy.logdebug("Increasing y!")
 
-            #if self.check_if_in_range(abs(rhand[1] - self.height), self.y_area[0], self.y_area[1]):
-            #    rospy.logdebug("Right hand inside of y area!")
-            #    if rhand[0] > self.x_deadzone[1] and rhand[1] < self.x_area[1]: 
-            #        pose_cmd.position.x += increase    
-            #        rospy.logdebug("Increasing x!")#
+                elif (self.check_if_in_range(rhand[1], self.y_area[0], self.y_deadzone[0])):
+                    pose_cmd.position.y -= decrease         
+                    rospy.logdebug("Decreasing y!")   
 
-            # elif rhand[0] < self.x_deadzone[0] and rhand[0] > self.x_area[0]:
-            # pose_cmd.position.x -= decrease
-            #rospy.logdebug("Decreasing x!")            
+            if self.check_if_in_range(rhand[1], self.y_area[0], self.y_area[1]):
+                rospy.logdebug("Right hand inside of y area!")
+                if self.check_if_in_range(rhand[0], self.x_deadzone[1], self.x_area[1]):
+                    pose_cmd.position.x += increase    
+                    rospy.logdebug("Increasing x!")
+
+                elif self.check_if_in_range(rhand[0], self.x_area[0], self.x_deadzone[0]): 
+                    pose_cmd.position.x -= decrease
+                    rospy.logdebug("Decreasing x!")            
             
 
             rospy.loginfo("x:{0} \t y: {1} \t , z: {2} \t , rot: {3} \t".format(round(pose_cmd.position.x, 3),
