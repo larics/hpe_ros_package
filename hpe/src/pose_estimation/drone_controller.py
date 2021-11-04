@@ -128,15 +128,15 @@ class uavController:
                     pose_cmd.position.z -= decrease  
                     rospy.logdebug("Decreasing z!")
      
-            if self.check_if_in_range(lhand[1], self.height_area[0], self.height_area[1]):
-                rospy.logdebug("Left hand inside of the height deadzone!")   
-                if (self.check_if_in_range(lhand[0], self.rotation_deadzone[0], self.rotation_area[1])):
-                    pose_cmd.orientation.z += increase # TODO: Generate orientation correctly for quaternion
-                    rospy.logdebug("Increasing yaw!")
-                
-                elif(self.check_if_in_range(lhand[0], self.rotation_area[0], self.rotation_deadzone[1])):
-                    pose_cmd.orientation.z -= decrease
-                    rospy.logdebug("Decreasing yaw!")
+            #if self.check_if_in_range(lhand[1], self.height_area[0], self.height_area[1]):
+            #    rospy.logdebug("Left hand inside of the height deadzone!")   
+            #    if (self.check_if_in_range(lhand[0], self.rotation_deadzone[0], self.rotation_area[1])):
+            #        pose_cmd.orientation.z += increase # TODO: Generate orientation correctly for quaternion
+            #        rospy.logdebug("Increasing yaw!")
+            #    
+            #    elif(self.check_if_in_range(lhand[0], self.rotation_area[0], self.rotation_deadzone[1])):
+            #        pose_cmd.orientation.z -= decrease
+            #        rospy.logdebug("Decreasing yaw!")
             
             # Converter for x and y movements. Left hand is [15]   
             if self.check_if_in_range(rhand[0], self.x_area[0], self.x_area[1]):
@@ -181,7 +181,7 @@ class uavController:
         #rospy.loginfo("Duration of pred_cb is: {}".format(duration))
 
         
-     
+    # Method for drawing UI with user
     def stickman_cb(self, stickman_img):
         
         start_time = rospy.Time().now().to_sec()
@@ -195,9 +195,17 @@ class uavController:
         # Draw rectangles which represent areas for control
         draw = ImageDraw.Draw(img, "RGBA")
         
-        # Rectangles for height and rotation
-        draw.rectangle([(self.rotation_area[0], self.height_deadzone[0]), (self.rotation_area[1], self.height_deadzone[1])],
+        # Rect for yaw
+        yaw_ctl = False
+        if not yaw_ctl:
+            draw.rectangle([(self.rotation_deadzone[0], self.height_deadzone[0]), (self.rotation_deadzone[1], self.height_deadzone[1])],
                          fill=(178,34,34, 100), width=2)
+        
+        else:
+            draw.rectangle([(self.rotation_area[0], self.height_deadzone[0]), (self.rotation_area[1], self.height_deadzone[1])],
+                         fill=(178,34,34, 100), width=2)
+
+        # Rect for height
         draw.rectangle([(self.rotation_deadzone[0], self.height_area[0]), (self.rotation_deadzone[1], self.height_area[1])],
                          fill=(178,34,34, 100), width=2)
        
@@ -207,8 +215,8 @@ class uavController:
         yp_size = uavController.get_text_dimensions("Y+", self.font); ym_size = uavController.get_text_dimensions("Y-", self.font)
         draw.text(((self.rotation_area[0] + self.rotation_area[1])/2 - up_size[0]/2, self.height_area[0]- up_size[1] ), "UP", font=self.font)
         draw.text(((self.rotation_area[0] + self.rotation_area[1])/2 - down_size[0]/2, self.height_area[1]), "DOWN", font=self.font)
-        draw.text(((self.rotation_area[0] - ym_size[0], (self.height_area[0] + self.height_area[1])/2 - ym_size[1]/2)), "Y-", font=self.font)
-        draw.text(((self.rotation_area[1], (self.height_area[0] + self.height_area[1])/2 - yp_size[1]/2)), "Y+", font=self.font)
+        #draw.text(((self.rotation_area[0] - ym_size[0], (self.height_area[0] + self.height_area[1])/2 - ym_size[1]/2)), "Y-", font=self.font)
+        #draw.text(((self.rotation_area[1], (self.height_area[0] + self.height_area[1])/2 - yp_size[1]/2)), "Y+", font=self.font)
 
         ######################################################################################################################################
         # Rectangles for movement left-right and forward-backward
