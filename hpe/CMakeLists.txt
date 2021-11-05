@@ -16,7 +16,6 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   sensor_msgs
-  cv_bridge
 )
 find_package(Torch REQUIRED)
 find_package(OpenCV REQUIRED)

@@ -1,7 +1,7 @@
 #!/opt/conda/bin/python3
 
 import rospy
-import numpy
+import numpy as np
 import cv2
 
 import argparse
@@ -15,89 +15,74 @@ from PIL import Image as PILImage
 from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool
-from cv_bridge import CvBridge, CvBridgeError
 
 import mediapipe as mp
 # This fails due to the AVX instructions tf has 
 try:
     import tensorflow as tf
+    print("Successfuly imported tensorflow!")
+    print("Used python path is: {}".format(sys.path))
 except Exception as e:
     print(str(e))
-
 #from tensorflow.keras.models import load_model
 
 class HandPoseEstimation():
 
     def __init__(self, frequency):
         
-        print("Starting initialization!")
+        self.initialized = False
 
-        rospy.init_node("hand_pose_estimation")
+        rospy.init_node("hand_pose_estimation", log_level=rospy.DEBUG)
 
         rospy.loginfo("Started hand pose estimation!")
-        
+                
         
         self.rate = rospy.Rate(int(frequency))
 
-        """
+        
         # Initialize subscribers/publishers
         self._init_publishers()
         self._init_subscribers()
 
+        # Initialize hand model 
+        self.mpHands = mp.solutions.hands
+        self.hands = self.mpHands.Hands(model_complexity=0, 
+                                        max_num_hands=1,
+                                        min_detection_confidence=0.5,
+                                        static_image_mode=True)
+        self.mpDraw = mp.solutions.drawing_utils
+
+        # Initialize computer vision bridge
+        #self.cv_bridge = CvBridge()
+
+
+        """
+        
         self.nn_input = None
         
         # Initialize font
         self.font = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/hpe/include/arial.ttf", 20, encoding="unic")
 
-        # Initialize hand model 
-        self.mpHands = mp.solutions.hands
-        self.hands = self.mpHands.Hands(max_num_hands=1, min_detection_confidence=0.7)
-        self.mpDraw = mp.solutions.drawing_utils
-
         self.model = load_model('mp_hand_gesture')
         self.classNames = ['okay', 'peace', 'thumbs up', 'thumbs down', 'call me', 'stop', 'rock', 'live long', 'fist', 'smile']
 
-        self.cv_bridge = CvBridge()
 
         """
 
         # flags for starting 
-        self.model_ready = True
         self.first_img_reciv = False
-
+        self.detected_hand = False
+        self.initialized = True
 
     def _init_subscribers(self):
         self.camera_sub = rospy.Subscriber("usb_camera/image_raw", Image, self.image_cb, queue_size=1)
 
- 
-    def _init_publishers(self):
+     def _init_publishers(self):
+        self.detected_points_pub = rospy.Publisher("/hand_keypoints", Image, queue_size=1)
         #self.dummy_pub = rospy.Publisher("/dummy_pub", Bool, queue_size=1)
         #self.image_pub = rospy.Publisher("/stickman", Image, queue_size=1)
         #self.pred_pub = rospy.Publisher("/hpe_preds", Float64MultiArray, queue_size=1)
         pass
-
-    def _load_model(self, config):
-        
-        rospy.loginfo("Model name is: {}".format(config.MODEL.NAME))
-        model = eval('models.' + config.MODEL.NAME + '.get_pose_net')(
-        config, is_train=False)
-
-        rospy.loginfo("Passed config is: {}".format(config))
-        rospy.loginfo("config.TEST.MODEL.FILE")
-
-        if config.TEST.MODEL_FILE:
-            model_state_file = config.TEST.MODEL_FILE
-            rospy.loginfo('=> loading model from {}'.format(config.TEST.MODEL_FILE))
-            model.load_state_dict(torch.load(config.TEST.MODEL_FILE))
-        else:
-            model_state_file = os.path.join(final_output_dir,
-                                        'final_state.pth.tar')
-            rospy.loginfo('=> loading model from {}'.format(model_state_file))
-            model.load_state_dict(torch.load(model_state_file))
-
-        model.to(self.device)           
-        
-        return model
 
     def image_cb(self, msg):
 
@@ -105,11 +90,16 @@ class HandPoseEstimation():
 
         self.first_img_reciv = True
 
-        try: 
-            cv_image = self.cv_bridge.imgmsg_to_cv2(msg, "bgr8")
+        #try: 
+        # cv_image = self.cv_bridge.imgmsg_to_cv2(msg, "bgr8")
 
-        except CvBridgeError as e:
-            rospy.logerror(str(e))
+        print(msg.height)
+        print(msg.width)
+
+        img = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.width, msg.height, -1)
+
+        #except CvBridgeError as e:
+        #    rospy.logerror(str(e))
 
         debug_img = False
         if debug_img:
@@ -118,38 +108,55 @@ class HandPoseEstimation():
             rospy.loginfo("Data is: {}".format(len(msg.data)))
             rospy.loginfo("Input shape is: {}".format(input.shape))
 
-        cv_img_rgb = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+        cv_img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        result = self.hands.process(cv_img_rgb)
+        print(cv_img_rgb)
 
-        print(result)
+        #cv_img_rgb = HandPoseEstimation.bgr2rgb(img)
+
+        self.detected_hand = self.hands.process(cv_img_rgb)
         
         duration = rospy.Time.now().to_sec() - start_time 
         #rospy.loginfo("Duration of image_cb is: {}".format(duration)) # max --> 0.01s
                          
-
-    #https://www.ros.org/news/2018/09/roscon-2017-determinism-in-ros---or-when-things-break-sometimes-and-how-to-fix-it----ingo-lutkebohle.html
     def run(self):
 
         self.first = True
         
         while not rospy.is_shutdown(): 
 
-            if (self.first_img_reciv and self.nn_input_formed):
+            if (self.first_img_reciv and self.detected_hand and self.initialized):
                
                 start_time = rospy.Time.now().to_sec()
                 
-                # Convert ROS Image to PIL 
-                start_time1 = rospy.Time.now().to_sec()
-             
-                duration = rospy.Time.now().to_sec() - start_time
-                debug_runtime = False
-                if debug_runtime:
-                    rospy.loginfo("Run duration is: {}".format(duration))
+                dir(self.detected_hand)
 
-            
+                if self.detected_hand.multi_hand_landmarks:
+                    rospy.logdebug(hand_landmarks)
+
+                    
+                    for hand_landmarks in self.detected_hand.multi_hand_landmarks:
+                        self.mpDraw.draw_landmarks(
+                                                    image,
+                                                    hand_landmarks,
+                                                    mp_hands.HAND_CONNECTIONS,
+                                                    mp_drawing_styles.get_default_hand_landmarks_style(),
+                                                    mp_drawing_styles.get_default_hand_connections_style())
+
+                            
             self.rate.sleep()
-            
+
+    @staticmethod
+    def bgr2rgb(img_array):
+
+        rgb = np.zeros(img_array.shape, dtype=np.float32)
+        rgb[:, :, 0] = img_array[:, :, 2]/255.0
+        rgb[:, :, 1] = img_array[:, :, 1]/255.0
+        rgb[:, :, 2] = img_array[:, :, 0]/255.0  
+
+        print(rgb)
+
+        return rgb
 
     @staticmethod
     def draw_hand(img, predictions):
@@ -174,7 +181,6 @@ class HandPoseEstimation():
         msg.data = numpy.array(img).tobytes()
         return msg   
 
-
 def reset_config(config, args):
     if args.gpus:
         config.GPUS = args.gpus
@@ -189,10 +195,7 @@ def reset_config(config, args):
     if args.coco_bbox_file:
         config.TEST.COCO_BBOX_FILE = args.coco_bbox_file
 
-
-
 if __name__ == '__main__':
-
 
     print("==============Starting hand pose estimation!===========")
     handPoseROS = HandPoseEstimation(sys.argv[1])

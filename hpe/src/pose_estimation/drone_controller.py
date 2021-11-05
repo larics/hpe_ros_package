@@ -50,20 +50,17 @@ class uavController:
 
         rospy.loginfo("Initialized!")   
 
-
     def _init_publishers(self): 
         
         self.pose_pub = rospy.Publisher("uav/pose_ref", Pose, queue_size=1)
         self.stickman_area_pub = rospy.Publisher("/stickman_cont_area", Image, queue_size=1)
-
 
     def _init_subscribers(self): 
 
         self.preds_sub = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
         self.stickman_sub = rospy.Subscriber("stickman", Image, self.stickman_cb, queue_size=1)
         self.current_pose_sub = rospy.Subscriber("uav/pose", PoseStamped, self.curr_pose_cb, queue_size=1)
-        
-    
+         
     def curr_pose_cb(self, msg):
         
         self.recv_pose_meas = True; 
@@ -179,8 +176,7 @@ class uavController:
 
         duration = rospy.Time.now().to_sec() - start_time
         #rospy.loginfo("Duration of pred_cb is: {}".format(duration))
-
-        
+     
     # Method for drawing UI with user
     def stickman_cb(self, stickman_img):
         
@@ -242,14 +238,12 @@ class uavController:
         duration = rospy.Time().now().to_sec() - start_time
         #rospy.loginfo("stickman_cb duration is: {}".format(duration))
 
-
     def run(self): 
         #rospy.spin()
         while not rospy.is_shutdown():   
             #rospy.loginfo("CTL run")  
             self.rate.sleep()
     
-
     def check_if_in_range(self, value, min_value, max_value): 
 
         if (value >= min_value and value <= max_value): 
@@ -257,10 +251,7 @@ class uavController:
 
         else: 
             return False 
-
-
-
-    
+ 
     @staticmethod
     def convert_pil_to_ros_img(img):
         img = img.convert('RGB')
