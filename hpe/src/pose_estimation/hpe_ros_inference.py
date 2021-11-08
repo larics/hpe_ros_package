@@ -87,7 +87,6 @@ class HumanPoseEstimationROS():
         # Initialize font
         self.font = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/hpe/include/arial.ttf", 20, encoding="unic")
 
-
     def _init_subscribers(self):
         self.camera_sub = rospy.Subscriber("usb_camera/image_raw", Image, self.image_cb, queue_size=1)
         #self.darknet_sub = rospy.Subscriber("/darknet_ros/bounding_boxes", BoundingBoxes, self.darknet_cb, queue_size=1)
@@ -171,7 +170,6 @@ class HumanPoseEstimationROS():
         duration = rospy.Time.now().to_sec() - start_time 
         #rospy.loginfo("Duration of image_cb is: {}".format(duration)) # max --> 0.01s
                          
-
     def darknet_cb(self, darknet_boxes):
         
         max_area = 0
@@ -186,7 +184,6 @@ class HumanPoseEstimationROS():
                     self.h = bbox.ymax - bbox.ymin
         else:
             return
-
 
     def aspect_ratio_scaler(self, img, x0, y0, width, height):
 
@@ -287,7 +284,6 @@ class HumanPoseEstimationROS():
             
             self.rate.sleep()
             
-
     @staticmethod
     def draw_stickman(img, predictions):
         
@@ -303,13 +299,8 @@ class HumanPoseEstimationROS():
         for i in range (0, len(predictions)): 
             if i  in ctl_indices:
 
-                if i == 10: 
+                if i == 10 or i == 15: 
                     fill_ = "green"
-                    draw.text((predictions[i][0], predictions[i][1]), "R", font=font_)
-
-                if i == 15:
-                    fill_ = "red"
-                    draw.text((predictions[i][0], predictions[i][1]), "L", font=font_)
 
             else:
                 fill_ = (153, 255, 255)
@@ -320,7 +311,6 @@ class HumanPoseEstimationROS():
 
 
         return img
-
 
     @staticmethod
     def convert_pil_to_ros_img(img):
@@ -341,7 +331,6 @@ class HumanPoseEstimationROS():
         msg.data = numpy.array(img).tobytes()
         return msg   
 
-
 def reset_config(config, args):
     if args.gpus:
         config.GPUS = args.gpus
@@ -355,8 +344,6 @@ def reset_config(config, args):
         config.TEST.MODEL_FILE = args.model_file
     if args.coco_bbox_file:
         config.TEST.COCO_BBOX_FILE = args.coco_bbox_file
-
-
 
 if __name__ == '__main__':
 

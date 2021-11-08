@@ -14,7 +14,6 @@ from PIL import Image as PILImage
 
 from hpe_ros_inference import HumanPoseEstimationROS
 
-
 class uavController:
     def __init__(self, frequency):
 
@@ -139,11 +138,11 @@ class uavController:
             if self.check_if_in_range(rhand[0], self.x_area[0], self.x_area[1]):
 
                 if (self.check_if_in_range(rhand[1], self.y_deadzone[1], self.y_area[1])):
-                    pose_cmd.position.y += increase
+                    pose_cmd.position.y -= increase
                     rospy.logdebug("Increasing y!")
 
                 elif (self.check_if_in_range(rhand[1], self.y_area[0], self.y_deadzone[0])):
-                    pose_cmd.position.y -= decrease         
+                    pose_cmd.position.y += decrease         
                     rospy.logdebug("Decreasing y!")   
 
             if self.check_if_in_range(rhand[1], self.y_area[0], self.y_area[1]):
@@ -177,7 +176,6 @@ class uavController:
         duration = rospy.Time.now().to_sec() - start_time
         #rospy.loginfo("Duration of pred_cb is: {}".format(duration))
      
-    # Method for drawing UI with user
     def stickman_cb(self, stickman_img):
         
         start_time = rospy.Time().now().to_sec()
@@ -209,8 +207,8 @@ class uavController:
         offset_x = 2; offset_y = 2; 
         up_size = uavController.get_text_dimensions("UP", self.font); down_size = uavController.get_text_dimensions("DOWN", self.font)
         yp_size = uavController.get_text_dimensions("Y+", self.font); ym_size = uavController.get_text_dimensions("Y-", self.font)
-        draw.text(((self.rotation_area[0] + self.rotation_area[1])/2 - up_size[0]/2, self.height_area[0]- up_size[1] ), "UP", font=self.font)
-        draw.text(((self.rotation_area[0] + self.rotation_area[1])/2 - down_size[0]/2, self.height_area[1]), "DOWN", font=self.font)
+        draw.text(((self.rotation_area[0] + self.rotation_area[1])/2 - up_size[0]/2, self.height_area[0]- up_size[1] ), "UP", font=self.font, fill="black")
+        draw.text(((self.rotation_area[0] + self.rotation_area[1])/2 - down_size[0]/2, self.height_area[1]), "DOWN", font=self.font, fill="black")
         #draw.text(((self.rotation_area[0] - ym_size[0], (self.height_area[0] + self.height_area[1])/2 - ym_size[1]/2)), "Y-", font=self.font)
         #draw.text(((self.rotation_area[1], (self.height_area[0] + self.height_area[1])/2 - yp_size[1]/2)), "Y+", font=self.font)
 
@@ -224,10 +222,10 @@ class uavController:
         # Text for moving UAV forward and backward 
         fwd_size = uavController.get_text_dimensions("FWD", self.font); bwd_size = uavController.get_text_dimensions("BWD", self.font)
         l_size = uavController.get_text_dimensions("L", self.font); r_size = uavController.get_text_dimensions("R", self.font)
-        draw.text(((self.x_area[0] + self.x_area[1])/2 - fwd_size[0]/2, self.y_area[0] - fwd_size[1]), "FWD", font=self.font)
-        draw.text(((self.x_area[0] + self.x_area[1])/2 - bwd_size[0]/2, self.y_area[1]), "BWD", font=self.font)
-        draw.text(((self.x_area[0] - l_size[0], (self.y_area[0] + self.y_area[1])/2 - r_size[1]/2)), "L", font=self.font)
-        draw.text(((self.x_area[1], (self.y_area[0] + self.y_area[1])/2 - l_size[1]/2)), "R", font=self.font)
+        draw.text(((self.x_area[0] + self.x_area[1])/2 - r_size[0]/2, self.y_area[0] - r_size[1]), "L", font=self.font, fill="black")
+        draw.text(((self.x_area[0] + self.x_area[1])/2 - l_size[0]/2, self.y_area[1]), "R", font=self.font, fill="black")
+        draw.text(((self.x_area[0] - bwd_size[0], (self.y_area[0] + self.y_area[1])/2 - bwd_size[1]/2)), "BWD", font=self.font, fill="black")
+        draw.text(((self.x_area[1], (self.y_area[0] + self.y_area[1])/2 - fwd_size[1]/2)), "FWD", font=self.font, fill="black")
         ########################################################################################################################################
 
         # Check what this mirroring does here! 

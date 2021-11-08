@@ -35,10 +35,8 @@ class HandPoseEstimation():
         rospy.init_node("hand_pose_estimation", log_level=rospy.DEBUG)
 
         rospy.loginfo("Started hand pose estimation!")
-                
-        
+                     
         self.rate = rospy.Rate(int(frequency))
-
         
         # Initialize subscribers/publishers
         self._init_publishers()
@@ -129,19 +127,15 @@ class HandPoseEstimation():
                
                 start_time = rospy.Time.now().to_sec()
                 
-                dir(self.detected_hand)
-
                 if self.detected_hand.multi_hand_landmarks:
                     rospy.logdebug(hand_landmarks)
-
                     
                     for hand_landmarks in self.detected_hand.multi_hand_landmarks:
-                        self.mpDraw.draw_landmarks(
-                                                    image,
-                                                    hand_landmarks,
-                                                    mp_hands.HAND_CONNECTIONS,
-                                                    mp_drawing_styles.get_default_hand_landmarks_style(),
-                                                    mp_drawing_styles.get_default_hand_connections_style())
+                        self.mpDraw.draw_landmarks(image,
+                                                   hand_landmarks,
+                                                   mp_hands.HAND_CONNECTIONS,
+                                                   mp_drawing_styles.get_default_hand_landmarks_style(),
+                                                   mp_drawing_styles.get_default_hand_connections_style())
 
                             
             self.rate.sleep()
