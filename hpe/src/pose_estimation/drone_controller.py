@@ -6,7 +6,7 @@ import cv2
 import numpy
 
 from geometry_msgs.msg import Pose, PoseStamped
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Float64MultiArray, Int32
 from sensor_msgs.msg import Image
 
 from PIL import ImageDraw, ImageOps, ImageFont
@@ -45,6 +45,7 @@ class uavController:
         self.started = False
         self.rate = rospy.Rate(int(frequency))     
 
+        self.inspect_keypoints = True
         self.recv_pose_meas = False
 
         rospy.loginfo("Initialized!")   
@@ -54,12 +55,30 @@ class uavController:
         self.pose_pub = rospy.Publisher("uav/pose_ref", Pose, queue_size=1)
         self.stickman_area_pub = rospy.Publisher("/stickman_cont_area", Image, queue_size=1)
 
+        self.lhand_x_pub = rospy.Publisher("hpe/lhand_x", Int32, queue_size=1)
+        self.rhand_x_pub = rospy.Publisher("hpe/rhand_x", Int32, queue_size=1)
+        self.lhand_y_pub = rospy.Publisher("hpe/lhand_y", Int32, queue_size=1)
+        self.rhand_y_pub = rospy.Publisher("hpe/rhand_y", Int32, queue_size=1)
+
     def _init_subscribers(self): 
 
         self.preds_sub = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
         self.stickman_sub = rospy.Subscriber("stickman", Image, self.stickman_cb, queue_size=1)
         self.current_pose_sub = rospy.Subscriber("uav/pose", PoseStamped, self.curr_pose_cb, queue_size=1)
          
+    def publish_predicted_keypoints(self, rhand, lhand): 
+
+        rhand_x, rhand_y = rhand[0], rhand[1]; 
+        lhand_x, lhand_y = lhand[0], lhand[1]
+
+        rospy.logdebug("rhand: \t x: {}\t y: {}".format(rhand_x, rhand_y))
+        rospy.logdebug("lhand: \t x: {}\t y: {}".format(lhand_x, lhand_y))
+
+        self.lhand_x_pub.publish(int(lhand_x))
+        self.lhand_y_pub.publish(int(lhand_y))
+        self.rhand_x_pub.publish(int(rhand_x))
+        self.rhand_y_pub.publish(int(rhand_y))
+
     def curr_pose_cb(self, msg):
         
         self.recv_pose_meas = True; 
@@ -102,6 +121,10 @@ class uavController:
         # Use info about right hand and left hand 
         rhand = preds[10]
         lhand = preds[15]
+
+
+        if self.inspect_keypoints:  
+            self.publish_predicted_keypoints(rhand, lhand)
 
         increase = 0.03; decrease = 0.03; 
         
