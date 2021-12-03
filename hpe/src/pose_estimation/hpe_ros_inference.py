@@ -16,6 +16,7 @@ import argparse
 import os
 import sys
 import pprint
+import statistics
 
 import torch
 import torch.nn.parallel
@@ -33,7 +34,7 @@ from core.inference import get_final_preds, get_max_preds
 from utils.utils import create_logger
 from utils.transforms import get_affine_transform
 
-from PIL import ImageDraw
+from PIL import ImageDraw, ImageFont
 from PIL import Image as PILImage
 
 import dataset
@@ -48,15 +49,12 @@ class HumanPoseEstimationROS():
 
         rospy.init_node("hpe_simplebaselines")
         
-        self.rate = rospy.Rate(frequency)
+        self.rate = rospy.Rate(int(frequency))
 
         # Update configuration file
         update_config(args.cfg)
         reset_config(config, args)
         self.config = config
-
-        # Initialize provided logger
-        self.logger, final_output_dir, tb_log_dir = create_logger(config, args.cfg, 'valid')
 
         # Legacy CUDNN --> probably not necessary 
         cudnn.benchmark = config.CUDNN.BENCHMARK
@@ -66,17 +64,14 @@ class HumanPoseEstimationROS():
         self.model_ready = False
         self.first_img_reciv = False
         self.nn_input_formed = False
+        self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-        self.logger.info("[HPE-SimpleBaselines] Loading model")
+
+        rospy.loginfo("[HPE-SimpleBaselines] Loading model")
         self.model = self._load_model(config)
-        self.logger.info("[HPE-SimpleBaselines] Loaded model..")
+        rospy.loginfo("[HPE-SimpleBaselines] Loaded model...")
         self.model_ready = True
 
-        self.multiple_GPUs = False
-        if self.multiple_GPUs:
-            gpus = [int(i) for i in config.GPUS.split(',')]
-            rospy.loginfo("Detected GPUS: {}".format(gpus))
-            model = torch.nn.DataParallel(model, device_ids=gpus).cuda()
 
         # Initialize subscribers/publishers
         self._init_publishers()
@@ -90,6 +85,11 @@ class HumanPoseEstimationROS():
         self.w = None
         self.h = None
 
+        # Initialize font
+        self.font = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/hpe/include/arial.ttf", 20, encoding="unic")
+
+        self.filtering_active = False; self.filter_first_pass = False
+
     def _init_subscribers(self):
         self.camera_sub = rospy.Subscriber("usb_camera/image_raw", Image, self.image_cb, queue_size=1)
         #self.darknet_sub = rospy.Subscriber("/darknet_ros/bounding_boxes", BoundingBoxes, self.darknet_cb, queue_size=1)
@@ -101,35 +101,39 @@ class HumanPoseEstimationROS():
 
     def _load_model(self, config):
         
-        print("Model name is: {}".format(config.MODEL.NAME))
+        rospy.loginfo("Model name is: {}".format(config.MODEL.NAME))
         model = eval('models.' + config.MODEL.NAME + '.get_pose_net')(
         config, is_train=False)
 
-        self.logger.info("Passed config is: {}".format(config))
-        self.logger.info("config.TEST.MODEL.FILE")
+        rospy.loginfo("Passed config is: {}".format(config))
+        rospy.loginfo("config.TEST.MODEL.FILE")
 
         if config.TEST.MODEL_FILE:
             model_state_file = config.TEST.MODEL_FILE
-            print('=> loading model from {}'.format(config.TEST.MODEL_FILE))
+            rospy.loginfo('=> loading model from {}'.format(config.TEST.MODEL_FILE))
             model.load_state_dict(torch.load(config.TEST.MODEL_FILE))
         else:
             model_state_file = os.path.join(final_output_dir,
                                         'final_state.pth.tar')
-            print('=> loading model from {}'.format(model_state_file))
-            model.load_state_dict(torch.load(model_state_file))           
+            rospy.loginfot('=> loading model from {}'.format(model_state_file))
+            model.load_state_dict(torch.load(model_state_file))
+
+        model.to(self.device)           
         
         return model
 
     def image_cb(self, msg):
 
+        start_time = rospy.Time.now().to_sec()
+
         self.first_img_reciv = True
 
         debug_img = False
         if debug_img:
-            self.logger.info("Image width: {}".format(msg.width))
-            self.logger.info("Image height: {}".format(msg.height))
-            self.logger.info("Data is: {}".format(len(msg.data)))
-            self.logger.info("Input shape is: {}".format(input.shape))
+            rospy.loginfo("Image width: {}".format(msg.width))
+            rospy.loginfo("Image height: {}".format(msg.height))
+            rospy.loginfo("Data is: {}".format(len(msg.data)))
+            rospy.loginfo("Input shape is: {}".format(input.shape))
 
         # Transform img to numpy array        
         self.org_img = numpy.frombuffer(msg.data, dtype=numpy.uint8).reshape(msg.height, msg.width, -1)
@@ -159,14 +163,16 @@ class HumanPoseEstimationROS():
         self.scale = numpy.array([1, 1], dtype=numpy.float32) 
         
         # Transform img to 
-        self.nn_input = transform(self.cam_img).unsqueeze(0)   
+        self.nn_input = transform(self.cam_img).unsqueeze(0).to(self.device)   
 
         self.nn_input_formed = True
         
         if debug_img:
-            self.logger.info("NN_INPUT {}".format(self.nn_input))                              
+            rospy.loginfo("NN_INPUT {}".format(self.nn_input))             
 
-
+        duration = rospy.Time.now().to_sec() - start_time 
+        #rospy.loginfo("Duration of image_cb is: {}".format(duration)) # max --> 0.01s
+                         
     def darknet_cb(self, darknet_boxes):
         
         max_area = 0
@@ -181,7 +187,6 @@ class HumanPoseEstimationROS():
                     self.h = bbox.ymax - bbox.ymin
         else:
             return
-
 
     def aspect_ratio_scaler(self, img, x0, y0, width, height):
 
@@ -203,7 +208,6 @@ class HumanPoseEstimationROS():
         if center[0] != -1:
             scale = scale * 1.25
 
-
         r = 0
         trans = get_affine_transform(center, scale, r, config.MODEL.IMAGE_SIZE)
         scaled_img = cv2.warpAffine(
@@ -216,7 +220,71 @@ class HumanPoseEstimationROS():
 
         return scaled_img, center, scale
 
-    
+    def filter_predictions(self, predictions, filter_type="avg", w_size=3): 
+
+
+        preds_ = predictions[0]
+
+        for i, prediction in enumerate(preds_): 
+            
+            # Keypoint 10 should be left wrist
+            if i == 10: 
+                l_x = preds_[i][0]; l_y = preds_[i][1]; 
+
+            # Keypoint 15 should be right wrist
+            if i == 15:
+                r_x = preds_[i][0]; r_y = preds_[i][1]; 
+
+        
+        p_right = (r_x, r_y); p_left = (l_x, l_y)
+        filtered_lx, filtered_ly, filtered_rx, filtered_ry = self.filtering(p_right, p_left, type=filter_type, window_size=w_size)
+
+        preds_[10][0] = int(filtered_lx); preds_[10][1] = int(filtered_ly); 
+        preds_[15][0] = int(filtered_rx); preds_[15][1] = int(filtered_ry); 
+
+        return preds_
+
+    def filtering(self, p_right, p_left, type="avg", window_size=3):
+
+        if self.first_img_reciv and not self.filter_first_pass : 
+            self.left_x = []; self.left_y = []; 
+            self.right_x = []; self.right_y = [];          
+            self.filter_first_pass = True 
+        
+        else:
+            self.left_x.append(p_left[0]); self.left_y.append(p_left[1])
+            self.right_x.append(p_right[0]); self.right_y.append(p_right[1])
+
+            if len(self.left_x) >= window_size: 
+                self.filtering_active = True
+                # Cropped
+                crop_l_x = self.left_x[-1 - window_size:].copy(); crop_l_y = self.left_y[-1 - window_size:].copy()
+                crop_r_x = self.right_x[-1 - window_size:].copy(); crop_r_y = self.right_y[-1 - window_size:].copy()
+
+                if type == "avg": 
+
+                    filter_l_x = HumanPoseEstimationROS.avg_list(crop_l_x); filter_l_y = self.avg_list(crop_l_y)
+                    filter_r_x = HumanPoseEstimationROS.avg_list(crop_r_x); filter_r_y = self.avg_list(crop_r_y)
+
+                elif type == "median":
+
+                    filter_l_x = HumanPoseEstimationROS.median_list(crop_l_x); filter_l_y = self.median_list(crop_l_y)
+                    filter_r_x = HumanPoseEstimationROS.median_list(crop_r_x); filter_r_y = self.median_list(crop_r_y)
+
+                buffer = 10
+                if len(self.left_x) > buffer:
+                    self.left_x = self.left_x[-buffer:]; self.left_y = self.left_y[-buffer:]
+                    self.right_x = self.right_x[-buffer:]; self.right_y = self.right_y[-buffer:]              
+
+        if self.filtering_active:
+
+            return filter_l_x, filter_l_y, filter_r_x, filter_r_y
+
+        else: 
+
+            return p_left[0], p_left[1], p_right[0], p_right[1]
+            
+    #https://www.ros.org/news/2018/09/roscon-2017-determinism-in-ros---or-when-things-break-sometimes-and-how-to-fix-it----ingo-lutkebohle.html
     def run(self):
 
         self.first = True
@@ -226,44 +294,51 @@ class HumanPoseEstimationROS():
         
         while not rospy.is_shutdown(): 
 
-            if (self.first_img_reciv and self.nn_input_formed): 
-                
+            if (self.first_img_reciv and self.nn_input_formed):
+               
                 start_time = rospy.Time.now().to_sec()
-                # Convert ROS Image to PIL
-                pil_img = PILImage.fromarray(self.org_img.astype('uint8'), 'RGB')
                 
-                # Get NN Output
-                print(type(self.nn_input))
-                output = self.model(self.nn_input)
+                # Convert ROS Image to PIL 
+                start_time1 = rospy.Time.now().to_sec()
+                pil_img = PILImage.fromarray(self.org_img.astype('uint8'), 'RGB')
+                rospy.logdebug("Conversion to PIL Image from numpy: {}".format(rospy.Time.now().to_sec() - start_time1))
+                
+                # Get NN Output ## TODO: Check if this could be made shorter :) 
+                rospy.logdebug(type(self.nn_input))
+                start_time2 = rospy.Time.now().to_sec()
+                output = self.model(self.nn_input) 
+                rospy.logdebug("NN inference1 duration: {}".format(rospy.Time.now().to_sec() - start_time2))
 
                 # Heatmaps
+                start_time3 = rospy.Time.now().to_sec()
                 batch_heatmaps = output.cpu().detach().numpy()
-                self.logger.info("Heatmap output: {}" +str(batch_heatmaps.shape))
-
                 # Get predictions                
                 #preds, maxvals = get_final_preds(config, batch_heatmaps, self.center, self.scale)
+                # preds otuput is list of lists, list that contain list that contains 16 points!
                 preds, maxvals = get_max_preds(batch_heatmaps)
-                duration = rospy.Time.now().to_sec() - start_time
-                self.logger.info("[HpeSimpleBaselines] Inference duration is: {}".format(duration))
+                rospy.logdebug("NN inference2 duration: {}".format(rospy.Time.now().to_sec() - start_time3))
 
-                # Heatmap size is 88x88, so this scales predictions to image size
+                # Heatmap size is 88x88, so this scales predictions to image size 
                 for pred in preds[0]:
                     pred[0] = pred[0]  * (640/88)
                     pred[1] = pred[1]  * (480/88)
-                self.logger.info(str(preds[0][0][0]) + "   " + str(preds[0][0][1]))
+                rospy.logdebug(str(preds[0][0][0]) + "   " + str(preds[0][0][1]))
                 
-                self.logger.info("Preds are: {}".format(preds))     
-                self.logger.info("Preds shape is: {}".format(preds.shape))
+                rospy.logdebug("Preds are: {}".format(preds))     
+                rospy.logdebug("Preds shape is: {}".format(preds.shape))
                 # Preds shape is [1, 16, 2] (or num persons is first dim)
-                self.logger.info("Preds shape is: {}".format(preds[0].shape))
+                rospy.loginfo("Preds shape is: {}".format(preds[0].shape))
+
+                
+                preds = self.filter_predictions(preds, "avg", 7)
 
                 # Draw stickman
-                stickman = HumanPoseEstimationROS.draw_stickman(pil_img, preds[0])
+                stickman = HumanPoseEstimationROS.draw_stickman(pil_img, preds)
                 stickman_ros_msg = HumanPoseEstimationROS.convert_pil_to_ros_img(stickman)
 
                 # Prepare predictions for publishing - convert to 1D float list
                 converted_preds = []
-                for pred in preds[0]:
+                for pred in preds:
                     converted_preds.append(pred[0])
                     converted_preds.append(pred[1])
                 preds_ros_msg = Float64MultiArray()
@@ -271,24 +346,53 @@ class HumanPoseEstimationROS():
                 
                 self.image_pub.publish(stickman_ros_msg)
                 self.pred_pub.publish(preds_ros_msg)
+
+                duration = rospy.Time.now().to_sec() - start_time
+                debug_runtime = False
+                if debug_runtime:
+                    rospy.loginfo("Run duration is: {}".format(duration))
+
             
             self.rate.sleep()
 
+    @staticmethod        
+    def avg_list(list_data):
+
+        return sum(list_data)/len(list_data)
+
+    @staticmethod
+    def median_list(list_data):
+
+        return statistics.median(list_data)
+
     @staticmethod
     def draw_stickman(img, predictions):
+        
 
         draw  = ImageDraw.Draw(img)
 
-        point_r = 2
+        font_ = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/hpe/include/arial.ttf", 20, encoding="unic")
 
+
+        point_r = 4
+
+        ctl_indices = [10, 15]
         for i in range (0, len(predictions)): 
-            draw.ellipse([(predictions[i][0] - point_r, predictions[i][1] - point_r), (predictions[i][0] + point_r, predictions[i][1] + point_r)], fill=(255, 0, 0), width=2*point_r)
+            
+            if i in ctl_indices:
+
+                if i == 10 or i == 15: 
+                    fill_ = "green"
+
+            else:
+                fill_ = (153, 255, 255)
+            draw.ellipse([(predictions[i][0] - point_r, predictions[i][1] - point_r), (predictions[i][0] + point_r, predictions[i][1] + point_r)], fill=fill_, width=2*point_r)
+
             if i < len(predictions) - 1 and i != 5 and i != 9:      
-                draw.line([(predictions[i][0], predictions[i][1]), (predictions[i + 1][0], predictions[i + 1][1])], fill="green", width=2)
+                draw.line([(predictions[i][0], predictions[i][1]), (predictions[i + 1][0], predictions[i + 1][1])], fill=(153, 255, 255), width=2)
 
 
         return img
-
 
     @staticmethod
     def convert_pil_to_ros_img(img):
@@ -309,7 +413,6 @@ class HumanPoseEstimationROS():
         msg.data = numpy.array(img).tobytes()
         return msg   
 
-
 def reset_config(config, args):
     if args.gpus:
         config.GPUS = args.gpus
@@ -324,10 +427,7 @@ def reset_config(config, args):
     if args.coco_bbox_file:
         config.TEST.COCO_BBOX_FILE = args.coco_bbox_file
 
-
-
 if __name__ == '__main__':
-
 
 
     parser = argparse.ArgumentParser(description='Train keypoints network')
