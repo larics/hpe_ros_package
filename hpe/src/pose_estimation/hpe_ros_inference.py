@@ -16,6 +16,7 @@ import argparse
 import os
 import sys
 import pprint
+import statistics
 
 import torch
 import torch.nn.parallel
@@ -86,6 +87,8 @@ class HumanPoseEstimationROS():
 
         # Initialize font
         self.font = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/hpe/include/arial.ttf", 20, encoding="unic")
+
+        self.filtering_active = False; self.filter_first_pass = False
 
     def _init_subscribers(self):
         self.camera_sub = rospy.Subscriber("usb_camera/image_raw", Image, self.image_cb, queue_size=1)
@@ -217,6 +220,70 @@ class HumanPoseEstimationROS():
 
         return scaled_img, center, scale
 
+    def filter_predictions(self, predictions, filter_type="avg", w_size=3): 
+
+
+        preds_ = predictions[0]
+
+        for i, prediction in enumerate(preds_): 
+            
+            # Keypoint 10 should be left wrist
+            if i == 10: 
+                l_x = preds_[i][0]; l_y = preds_[i][1]; 
+
+            # Keypoint 15 should be right wrist
+            if i == 15:
+                r_x = preds_[i][0]; r_y = preds_[i][1]; 
+
+        
+        p_right = (r_x, r_y); p_left = (l_x, l_y)
+        filtered_lx, filtered_ly, filtered_rx, filtered_ry = self.filtering(p_right, p_left, type=filter_type, window_size=w_size)
+
+        preds_[10][0] = int(filtered_lx); preds_[10][1] = int(filtered_ly); 
+        preds_[15][0] = int(filtered_rx); preds_[15][1] = int(filtered_ry); 
+
+        return preds_
+
+    def filtering(self, p_right, p_left, type="avg", window_size=3):
+
+        if self.first_img_reciv and not self.filter_first_pass : 
+            self.left_x = []; self.left_y = []; 
+            self.right_x = []; self.right_y = [];          
+            self.filter_first_pass = True 
+        
+        else:
+            self.left_x.append(p_left[0]); self.left_y.append(p_left[1])
+            self.right_x.append(p_right[0]); self.right_y.append(p_right[1])
+
+            if len(self.left_x) >= window_size: 
+                self.filtering_active = True
+                # Cropped
+                crop_l_x = self.left_x[-1 - window_size:].copy(); crop_l_y = self.left_y[-1 - window_size:].copy()
+                crop_r_x = self.right_x[-1 - window_size:].copy(); crop_r_y = self.right_y[-1 - window_size:].copy()
+
+                if type == "avg": 
+
+                    filter_l_x = HumanPoseEstimationROS.avg_list(crop_l_x); filter_l_y = self.avg_list(crop_l_y)
+                    filter_r_x = HumanPoseEstimationROS.avg_list(crop_r_x); filter_r_y = self.avg_list(crop_r_y)
+
+                elif type == "median":
+
+                    filter_l_x = HumanPoseEstimationROS.median_list(crop_l_x); filter_l_y = self.median_list(crop_l_y)
+                    filter_r_x = HumanPoseEstimationROS.median_list(crop_r_x); filter_r_y = self.median_list(crop_r_y)
+
+                buffer = 10
+                if len(self.left_x) > buffer:
+                    self.left_x = self.left_x[-buffer:]; self.left_y = self.left_y[-buffer:]
+                    self.right_x = self.right_x[-buffer:]; self.right_y = self.right_y[-buffer:]              
+
+        if self.filtering_active:
+
+            return filter_l_x, filter_l_y, filter_r_x, filter_r_y
+
+        else: 
+
+            return p_left[0], p_left[1], p_right[0], p_right[1]
+            
     #https://www.ros.org/news/2018/09/roscon-2017-determinism-in-ros---or-when-things-break-sometimes-and-how-to-fix-it----ingo-lutkebohle.html
     def run(self):
 
@@ -247,6 +314,7 @@ class HumanPoseEstimationROS():
                 batch_heatmaps = output.cpu().detach().numpy()
                 # Get predictions                
                 #preds, maxvals = get_final_preds(config, batch_heatmaps, self.center, self.scale)
+                # preds otuput is list of lists, list that contain list that contains 16 points!
                 preds, maxvals = get_max_preds(batch_heatmaps)
                 rospy.logdebug("NN inference2 duration: {}".format(rospy.Time.now().to_sec() - start_time3))
 
@@ -259,15 +327,18 @@ class HumanPoseEstimationROS():
                 rospy.logdebug("Preds are: {}".format(preds))     
                 rospy.logdebug("Preds shape is: {}".format(preds.shape))
                 # Preds shape is [1, 16, 2] (or num persons is first dim)
-                rospy.logdebug("Preds shape is: {}".format(preds[0].shape))
+                rospy.loginfo("Preds shape is: {}".format(preds[0].shape))
+
+                
+                preds = self.filter_predictions(preds, "avg", 7)
 
                 # Draw stickman
-                stickman = HumanPoseEstimationROS.draw_stickman(pil_img, preds[0])
+                stickman = HumanPoseEstimationROS.draw_stickman(pil_img, preds)
                 stickman_ros_msg = HumanPoseEstimationROS.convert_pil_to_ros_img(stickman)
 
                 # Prepare predictions for publishing - convert to 1D float list
                 converted_preds = []
-                for pred in preds[0]:
+                for pred in preds:
                     converted_preds.append(pred[0])
                     converted_preds.append(pred[1])
                 preds_ros_msg = Float64MultiArray()
@@ -283,7 +354,17 @@ class HumanPoseEstimationROS():
 
             
             self.rate.sleep()
-            
+
+    @staticmethod        
+    def avg_list(list_data):
+
+        return sum(list_data)/len(list_data)
+
+    @staticmethod
+    def median_list(list_data):
+
+        return statistics.median(list_data)
+
     @staticmethod
     def draw_stickman(img, predictions):
         
@@ -297,7 +378,8 @@ class HumanPoseEstimationROS():
 
         ctl_indices = [10, 15]
         for i in range (0, len(predictions)): 
-            if i  in ctl_indices:
+            
+            if i in ctl_indices:
 
                 if i == 10 or i == 15: 
                     fill_ = "green"
@@ -346,7 +428,6 @@ def reset_config(config, args):
         config.TEST.COCO_BBOX_FILE = args.coco_bbox_file
 
 if __name__ == '__main__':
-
 
 
     parser = argparse.ArgumentParser(description='Train keypoints network')
