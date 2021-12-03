@@ -6,14 +6,15 @@
     <!-- config files for each backbone model are located into experiments folder !-->
     <arg name="config_file" value="/home/developer/catkin_ws/src/hpe_ros_package/hpe/src/experiments/mpii/resnet152/384x384_d256x3_adam_lr1e-3.yaml"/>
     
-    
     <node name="hpe_simplebaselines_node" pkg="hpe" type="hpe_ros_inference.py" args="--frequency $(arg frequency) --cfg $(arg config_file) --model-file $(arg model_path) " output="screen"/>
-    
+
+    <?ignore
     <!--https://github.com/ms-iot/vscode-ros/blob/master/doc/spec/debug-ros-nodes.md!--> 
-    <!--node name="hand_pose_estimation_node" pkg="hpe" type="hand_pose_estimation.py" args="$(arg frequency) " output="screen" /!-->
-        
+    <node name="hand_pose_estimation_node" pkg="hpe" type="hand_pose_estimation.py" args="$(arg frequency) " output="screen" />
+    ?>    
+
     <node name="usb_camera" pkg="usb_cam" type="usb_cam_node" launch-prefix="bash -c 'sleep 5; $0 $@'" output="screen" >
-        <param name="video_device" value="$(arg video_dev)" />
+        <param name="video_device" value="$(arg video_dev)" />  
         <param name="image_width" value="640" />
         <param name="image_height" value="480" />
         <param name="pixel_format" value="yuyv" />
