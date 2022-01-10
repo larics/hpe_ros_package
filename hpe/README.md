@@ -22,8 +22,26 @@ with following:
 roslaunch hpe webcam_inference.launch
 ```
 
-TODO: 
+### HMI starting procedure 
+
+Starting procedure for HMI is to setup `ROS_MASTER_URI` and `ROS_IP` to the values of host PC to enable 
+streaming to AR glasses. 
+After that we can run following script: 
+
+```
+roslaunch hpe hmi_integration.launch 
+```
+
+
+### TODO High priority: 
+
+ - [ ] Move to compressed image to minimize latency for AR glasses 
+ - [ ] Add different zones configuration 
+ - [ ] Find accuracy metrics for human pose estimation  
+
+### TODO Low priority: 
+
+ - [ ] Try 3d pose estimation 
  - [ ] Add simple object detection (`darknet_ros`) for better pose estimate 
- - [ ] Add topic for publishing predictions 
  - [ ] Implement correct post processing as stated [here](https://github.com/microsoft/human-pose-estimation.pytorch/issues/26) 
  
