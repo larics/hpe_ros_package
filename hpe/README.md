@@ -33,6 +33,30 @@ roslaunch hpe hmi_integration.launch
 ```
 
 
+### Transport Server -> Client 
+
+Current transport from server to client currently takes:
+
+If we do not compress image. 
+
+```
+average rate: 9.519
+	min: 0.041s max: 0.244s std dev: 0.02216s window: 2050
+
+```
+
+While on raspberry we have subscription frequency `2.5 Hz`. 
+
+After using image compression with `image_transport` I get same values. 
+
+Launch for using compressed is: 
+```
+ rosrun image_transport republish raw in:=stickman_cont_area out:=stickman_compressed
+```
+
+
+
+
 ### TODO High priority: 
 
  - [ ] Move to compressed image to minimize latency for AR glasses 
