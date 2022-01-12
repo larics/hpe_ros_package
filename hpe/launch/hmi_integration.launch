@@ -10,6 +10,15 @@
     <!-- send position commands using HPE -->
     <node name="controller_node" pkg="hpe" type="drone_controller.py" args="$(arg ctl_freq)" output="screen"/>
 
+    <!-- add image transport for compression --> 
+    <!-- Only republishes! -->
+    <!-- node name="image_compression_node" pkg="image_transport" type="republish" output="screen" 
+     args="raw in:=stickman_cont_area compressed out:=stickman_compressed"/--> 
+
+    <!-- add fkie multimaster --> 
+    <!-- add discovery --> 
+    <!-- add master_sync -->   
+
     <!-- play sound command for UAV operator -->
     <!-- Requires pulseaudio client configuration which is used in docker -->
     <!-- node name="sound_play" pkg="sound_play" type="soundplay_node.py"/ -->

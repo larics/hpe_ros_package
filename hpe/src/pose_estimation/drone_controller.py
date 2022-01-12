@@ -7,7 +7,7 @@ import numpy
 
 from geometry_msgs.msg import Pose, PoseStamped
 from std_msgs.msg import Float64MultiArray, Int32
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CompressedImage
 
 from PIL import ImageDraw, ImageOps, ImageFont
 from PIL import Image as PILImage
@@ -15,6 +15,7 @@ from PIL import Image as PILImage
 from hpe_ros_inference import HumanPoseEstimationROS
 
 class uavController:
+
     def __init__(self, frequency):
 
 
@@ -48,12 +49,15 @@ class uavController:
         self.inspect_keypoints = True
         self.recv_pose_meas = False
 
+        self.hmi_integration = True
+
         rospy.loginfo("Initialized!")   
 
     def _init_publishers(self): 
         
         self.pose_pub = rospy.Publisher("uav/pose_ref", Pose, queue_size=1)
         self.stickman_area_pub = rospy.Publisher("/stickman_cont_area", Image, queue_size=1)
+        self.stickman_compressed_area_pub = rospy.Publisher("/stickman_compressed_ctl_area", CompressedImage, queue_size=1)
 
         self.lhand_x_pub = rospy.Publisher("hpe/lhand_x", Int32, queue_size=1)
         self.rhand_x_pub = rospy.Publisher("hpe/rhand_x", Int32, queue_size=1)
@@ -63,7 +67,7 @@ class uavController:
     def _init_subscribers(self): 
 
         self.preds_sub = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
-        self.stickman_sub = rospy.Subscriber("stickman", Image, self.stickman_cb, queue_size=1)
+        self.stickman_sub = rospy.Subscriber("stickman", Image, self.draw_zones_cb, queue_size=1)
         self.current_pose_sub = rospy.Subscriber("uav/pose", PoseStamped, self.curr_pose_cb, queue_size=1)
          
     def publish_predicted_keypoints(self, rhand, lhand): 
@@ -198,8 +202,8 @@ class uavController:
 
         duration = rospy.Time.now().to_sec() - start_time
         #rospy.loginfo("Duration of pred_cb is: {}".format(duration))
-     
-    def stickman_cb(self, stickman_img):
+
+    def draw_zones_cb(self, stickman_img):
         
         start_time = rospy.Time().now().to_sec()
         # Convert ROS Image to PIL
@@ -251,10 +255,20 @@ class uavController:
         draw.text(((self.x_area[1], (self.y_area[0] + self.y_area[1])/2 - fwd_size[1]/2)), "FWD", font=self.font, fill="black")
         ########################################################################################################################################
 
-        # Check what this mirroring does here! 
-        ros_msg = uavController.convert_pil_to_ros_img(img) # Find better way to do this
+        # Check what this mirroring does here! --> mirroring is neccessary to see ourselves when operating 
         #rospy.loginfo("Publishing stickman with zones!")
-        self.stickman_area_pub.publish(ros_msg)
+
+        if self.hmi_integration: 
+
+            compressed_msg = uavController.convert_pil_to_ros_compressed(img)
+            self.stickman_compressed_area_pub.publish(compressed_msg)            
+
+        else: 
+
+            ros_msg = uavController.convert_pil_to_ros_img(img) 
+            self.stickman_area_pub.publish(ros_msg)
+
+        #TODO: Add compression (use image transport to add it? )
 
         duration = rospy.Time().now().to_sec() - start_time
         #rospy.loginfo("stickman_cb duration is: {}".format(duration))
@@ -284,6 +298,20 @@ class uavController:
         msg.is_bigendian = False
         msg.step = 3 * img.width
         msg.data = numpy.array(img).tobytes()
+        return msg
+
+    @staticmethod
+    def convert_pil_to_ros_compressed(img, compression_type="jpeg"):
+
+        msg = CompressedImage()
+        msg.header.stamp = rospy.Time.now()       
+        msg.format = "{}".format(compression_type)
+        np_img = numpy.array(img); #bgr 
+        #rgb_img = np_img[:, :, [2, 1, 0]]
+        
+        compressed_img = cv2.imencode(".{}".format(compression_type), np_img)[1]
+        msg.data = compressed_img.tobytes()
+
         return msg
 
     @staticmethod

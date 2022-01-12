@@ -5,9 +5,10 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy
+from numpy.core.fromnumeric import compress
 import rospy
 from std_msgs.msg import Float64MultiArray
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CompressedImage
 from data_to_images import draw_point
 from data_to_images import draw_stickman
 import cv2
@@ -90,6 +91,9 @@ class HumanPoseEstimationROS():
 
         self.filtering_active = False; self.filter_first_pass = False
 
+        # If HMI integration (use compressed image)
+        self.hmi_integration = True
+
     def _init_subscribers(self):
         self.camera_sub = rospy.Subscriber("usb_camera/image_raw", Image, self.image_cb, queue_size=1)
         #self.darknet_sub = rospy.Subscriber("/darknet_ros/bounding_boxes", BoundingBoxes, self.darknet_cb, queue_size=1)
@@ -97,6 +101,7 @@ class HumanPoseEstimationROS():
     def _init_publishers(self):
         self.dummy_pub = rospy.Publisher("/dummy_pub", Bool, queue_size=1)
         self.image_pub = rospy.Publisher("/stickman", Image, queue_size=1)
+        self.image_compressed_pub = rospy.Publisher("/stickman_compressed", CompressedImage, queue_size=1)
         self.pred_pub = rospy.Publisher("/hpe_preds", Float64MultiArray, queue_size=1)
 
     def _load_model(self, config):
@@ -328,13 +333,19 @@ class HumanPoseEstimationROS():
                 rospy.logdebug("Preds shape is: {}".format(preds.shape))
                 # Preds shape is [1, 16, 2] (or num persons is first dim)
                 rospy.loginfo("Preds shape is: {}".format(preds[0].shape))
-
                 
                 preds = self.filter_predictions(preds, "avg", 7)
 
                 # Draw stickman
                 stickman = HumanPoseEstimationROS.draw_stickman(pil_img, preds)
-                stickman_ros_msg = HumanPoseEstimationROS.convert_pil_to_ros_img(stickman)
+                
+                if self.hmi_integration: 
+                    stickman_compressed_msg = HumanPoseEstimationROS.convert_pil_to_ros_compressed(stickman)
+                    self.image_compressed_pub.publish(stickman_compressed_msg)
+                else:
+                    stickman_ros_msg = HumanPoseEstimationROS.convert_pil_to_ros_img(stickman)
+                    self.image_pub.publish(stickman_ros_msg)
+                    
 
                 # Prepare predictions for publishing - convert to 1D float list
                 converted_preds = []
@@ -344,7 +355,6 @@ class HumanPoseEstimationROS():
                 preds_ros_msg = Float64MultiArray()
                 preds_ros_msg.data = converted_preds
                 
-                self.image_pub.publish(stickman_ros_msg)
                 self.pred_pub.publish(preds_ros_msg)
 
                 duration = rospy.Time.now().to_sec() - start_time
@@ -412,6 +422,21 @@ class HumanPoseEstimationROS():
         msg.step = 3 * img.width
         msg.data = numpy.array(img).tobytes()
         return msg   
+
+    @staticmethod
+    def convert_pil_to_ros_compressed(img, compression_type="jpeg"):
+
+        msg = CompressedImage()
+        msg.header.stamp = rospy.Time.now()       
+        msg.format = "{}".format(compression_type)
+        np_img = numpy.array(img); #bgr 
+        rgb_img = np_img[:, :, [2, 1, 0]]
+        
+        compressed_img = cv2.imencode(".{}".format(compression_type), rgb_img)[1]
+        msg.data = compressed_img.tobytes()
+
+        return msg
+ 
 
 def reset_config(config, args):
     if args.gpus:
