@@ -92,7 +92,7 @@ class HumanPoseEstimationROS():
         self.filtering_active = False; self.filter_first_pass = False
 
         # If HMI integration (use compressed image)
-        self.hmi_integration = True
+        self.compressed_stickman = False
 
     def _init_subscribers(self):
         self.camera_sub = rospy.Subscriber("usb_camera/image_raw", Image, self.image_cb, queue_size=1)
@@ -339,7 +339,8 @@ class HumanPoseEstimationROS():
                 # Draw stickman
                 stickman = HumanPoseEstimationROS.draw_stickman(pil_img, preds)
                 
-                if self.hmi_integration: 
+                # If compressed_stickman (zones don't work, no subscriber on compressed)
+                if self.compressed_stickman: 
                     stickman_compressed_msg = HumanPoseEstimationROS.convert_pil_to_ros_compressed(stickman)
                     self.image_compressed_pub.publish(stickman_compressed_msg)
                 else:
@@ -404,6 +405,7 @@ class HumanPoseEstimationROS():
 
         return img
 
+    #TODO: add those methods to img_utils --> when I have all neccessary methods for img_utils
     @staticmethod
     def convert_pil_to_ros_img(img):
         """Function for converting pillow to ros image
