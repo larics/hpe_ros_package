@@ -28,6 +28,8 @@ class uavController:
         self.current_z = 1
         self.current_rot = 0
 
+        self.control_type = "joy" #position
+
         self._init_publishers(); self._init_subscribers(); 
 
         # Define zones
@@ -43,11 +45,13 @@ class uavController:
         self.inspect_keypoints = False
         self.recv_pose_meas = False
 
-        self.hmi_integration = True
+        self.hmi_integration = False
+
+        self.initialized = True
+        self.prediction_started = False
 
         rospy.loginfo("Initialized!")   
 
-        self.control_type = "joy" #position
 
     def _init_publishers(self): 
         
@@ -72,7 +76,7 @@ class uavController:
         self.stickman_sub       = rospy.Subscriber("stickman", Image, self.draw_zones_cb, queue_size=1)
         self.current_pose_sub   = rospy.Subscriber("uav/pose", PoseStamped, self.curr_pose_cb, queue_size=1)
         
-    def define_rect_zones(img_width, img_height, edge_offset, rect_width):
+    def define_rect_zones(self, img_width, img_height, edge_offset, rect_width):
         
         # img center
         cx, cy = img_width/2, img_height/2
@@ -126,7 +130,6 @@ class uavController:
         preds = []
 
         start_time = rospy.Time().now().to_sec()
-
         # Why do we use switcher? 
         switcher = False
         for pred in converted_preds.data:
@@ -137,13 +140,13 @@ class uavController:
             switcher = not switcher
         
         # Use info about right hand and left hand 
-        rhand = preds[10]
-        lhand = preds[15]
+        self.rhand = preds[10]
+        self.lhand = preds[15]
 
-        self.rhand = rhand; self.lhand = lhand; 
+        self.prediction_started = True; 
 
         if self.inspect_keypoints:  
-            self.publish_predicted_keypoints(rhand, lhand)
+            self.publish_predicted_keypoints(self.rhand, self.lhand)
 
     def draw_zones_cb(self, stickman_img):
         
@@ -159,18 +162,16 @@ class uavController:
         draw = ImageDraw.Draw(img, "RGBA")
         
         # Rect for yaw
-        yaw_ctl = False
-        if yaw_ctl:
-            draw.rectangle(self.yaw_rect, fill=(178,34,34, 100), width=2)       
+        draw.rectangle(self.yaw_rect, fill=(178,34,34, 100), width=2)       
 
         # Rect for height
         draw.rectangle(self.height_rect, fill=(178,34,34, 100), width=2)
 
         # Rectangles for pitch
-        draw.rectangle(self.pitch_rect, fill=(178,34,34, 100), width=2)
+        # draw.rectangle(self.pitch_rect, fill=(178,34,34, 100), width=2)
         
         # Rect for roll 
-        draw.rectangle(self.roll_rect, fill=(178,34,34, 100), width=2)
+        # draw.rectangle(self.roll_rect, fill=(178,34,34, 100), width=2)
        
         # Text for changing UAV height and yaw
         offset_x = 2; offset_y = 2; 
@@ -197,7 +198,7 @@ class uavController:
         ########################################################################################################################################
 
         # Check what this mirroring does here! --> mirroring is neccessary to see ourselves when operating 
-        rospy.loginfo("Publishing stickman with zones!")
+        #rospy.loginfo("Publishing stickman with zones!")
 
         if self.hmi_integration: 
             rospy.loginfo("Compressing zones")
@@ -216,24 +217,25 @@ class uavController:
 
     def run(self): 
         #rospy.spin()
-        while not rospy.is_shutdown():   
-            #rospy.loginfo("CTL run")  
-            # Reverse mirroring operation: 
-            lhand_ = abs(self.lhand[0] - self.width)
-            rhand_ = abs(self.rhand[0] - self.width)
-            
-            #TODO: 
-            # - test generating references based on hand pose estimation 
 
-            if self.control_type == "position": 
+        while not rospy.is_shutdown():
+            if not self.initialized or not self.prediction_started: 
+                rospy.sleep(0.1)
+            else:
 
-                self.run_position_ctl(lhand_, rhand_)
+                # Reverse mirroring operation: 
+                lhand_ = (abs(self.lhand[0] - self.width), self.lhand[1])
+                rhand_ = (abs(self.rhand[0] - self.width), self.rhand[1])
 
-            if self.control_type == "joy": 
+                if self.control_type == "position": 
 
-                self.run_joy_ctl(lhand_, rhand_)
+                    self.run_position_ctl(lhand_, rhand_)
 
-            self.rate.sleep()
+                if self.control_type == "joy": 
+
+                    self.run_joy_ctl(lhand_, rhand_)
+
+                self.rate.sleep()
 
     # 1D checking if in range    
     def check_if_in_range(self, value, min_value, max_value): 
@@ -269,30 +271,27 @@ class uavController:
 
         return (cx, cy)
 
-    def in_ctl_zone(self, point, rect, deadzone, precision = False): 
+    def in_ctl_zone(self, point, rect, deadzone): 
 
         x, y = point[0], point[1]
         x0, y0  = rect[0][0], rect[0][1]
         x1, y1  = rect[1][0], rect[1][1]
         cx, cy = self.determine_center(rect)
 
-        rect1 = ((x0, y0), (cx - deadzone, cy - deadzone) )
-        rect2 = ((cx + deadzone, cy + deadzone), (x1, y1))
+        rect1 = ((x0, y0), (cx + deadzone, cy - deadzone) )
+        rect2 = ((cx - deadzone, cy + deadzone), (x1, y1))
 
         # First rect 
         if self.in_zone(point, rect1) or self.in_zone(point, rect2): 
 
-            if precision:
+            norm_x_diff = (cx - x) / ((x1 - x0)/2)
+            norm_y_diff = (cy - y) / ((y1 - y0)/2)
 
-                norm_x_diff = (cx - x0) / (x1 - x0)
-                norm_y_diff = (cy - y0) / (y1 - y0)
-
-                return norm_x_diff, norm_y_diff                              
-
-            return True 
+            return norm_x_diff, norm_y_diff
 
         else: 
-            return False
+
+            return 0.0, 0.0
         
     def run_position_ctl(self, lhand, rhand):
 
@@ -387,10 +386,10 @@ class uavController:
 
         joy_msg = Joy()
 
-        height_active, height_w, height_h = self.in_ctl_zone(lhand, self.height_rect, 20, precision=True)
+        height_w, height_h = self.in_ctl_zone(lhand, self.height_rect, 20)
         height_cmd = height_h 
 
-        yaw_active, yaw_w, yaw_h = self.in_ctl_zone(lhand, self.yaw_rect, 20, precision=True)
+        yaw_w, yaw_h = self.in_ctl_zone(lhand, self.yaw_rect, 20)
         yaw_cmd = yaw_w
 
         rospy.logdebug("Height cmd: {}".format(height_cmd))
