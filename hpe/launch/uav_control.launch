@@ -1,9 +1,0 @@
-<?xml version="1.0"?>
-<launch>
-    
-    <arg name="ctl_freq" value="1"/>
-    <include file="$(find hpe)/launch/webcam_inference.launch"/>
-    <node name="controller_node" pkg="hpe" type="drone_controller.py" args="$(arg ctl_freq)" output="screen"/>
-
-
-</launch>
