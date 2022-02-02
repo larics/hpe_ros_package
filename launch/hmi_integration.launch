@@ -5,10 +5,10 @@
     <arg name="ctl_freq" value="10"/>
 
     <!-- Launch usb_cam and HPE -->
-    <include file="$(find hpe)/launch/webcam_inference.launch"/>
+    <include file="$(find hpe_ros_package)/launch/webcam_inference.launch"/>
 
     <!-- send position commands using HPE -->
-    <node name="controller_node" pkg="hpe" type="drone_controller.py" args="$(arg ctl_freq)" output="screen"/>
+    <node name="controller_node" pkg="hpe_ros_package" type="drone_controller.py" args="$(arg ctl_freq)" output="screen"/>
 
     <!-- add image transport for compression --> 
     <!-- Only republishes! -->

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(hpe)
+project(hpe_ros_package)
 
 # This changes over time. 
 set(Torch_DIR "/opt/conda/lib/python3.8/site-packages/torch/share/cmake/Torch/")
@@ -98,7 +98,6 @@ include_directories(
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
    src/pose_estimation/camera_hpe.py
-   src/pose_estimation/camera_simulator.py
    src/pose_estimation/data_to_images.py
    src/pose_estimation/drone_controller.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

@@ -54,18 +54,27 @@ Launch for using compressed is:
  rosrun image_transport republish raw in:=stickman_cont_area out:=stickman_compressed
 ```
 
+### Current implementation status 
+
+Currently it's possible to use human pose estimation for generating references for UAV. 
+
+Now we have attitude zone control which sends commands to UAV in joy msg type. 
+It's possible to easily implement position control also. 
 
 
 
 ### TODO High priority: 
 
- - [ ] Move to compressed image to minimize latency for AR glasses 
- - [ ] Add different zones configuration 
+ - [x] Move to compressed image to minimize latency for AR glasses 
+ - [x] Add different zones configuration 
+ - [x] Parametrize zones 
+ - [x] Major refactoring
  - [ ] Find accuracy metrics for human pose estimation  
+ - [ ] Try HRNet --> TBD (not neccesary for now)  
 
 ### TODO Low priority: 
 
  - [ ] Try 3d pose estimation 
- - [ ] Add simple object detection (`darknet_ros`) for better pose estimate 
+ - [ ] Add simple object detection (`darknet_ros`) for better hpe  
  - [ ] Implement correct post processing as stated [here](https://github.com/microsoft/human-pose-estimation.pytorch/issues/26) 
  

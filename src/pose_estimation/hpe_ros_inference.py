@@ -382,7 +382,7 @@ class HumanPoseEstimationROS():
 
         draw  = ImageDraw.Draw(img)
 
-        font_ = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/hpe/include/arial.ttf", 20, encoding="unic")
+        font_ = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/include/arial.ttf", 20, encoding="unic")
 
 
         point_r = 4
@@ -438,7 +438,6 @@ class HumanPoseEstimationROS():
         msg.data = compressed_img.tobytes()
 
         return msg
- 
 
 def reset_config(config, args):
     if args.gpus:
@@ -455,7 +454,6 @@ def reset_config(config, args):
         config.TEST.COCO_BBOX_FILE = args.coco_bbox_file
 
 if __name__ == '__main__':
-
 
     parser = argparse.ArgumentParser(description='Train keypoints network')
     # general
