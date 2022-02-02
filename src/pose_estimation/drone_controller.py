@@ -80,8 +80,7 @@ class uavController:
         self.preds_sub          = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
         self.stickman_sub       = rospy.Subscriber("stickman", Image, self.draw_zones_cb, queue_size=1)
         self.current_pose_sub   = rospy.Subscriber("uav/pose", PoseStamped, self.curr_pose_cb, queue_size=1)
-        
-       
+           
     def publish_predicted_keypoints(self, rhand, lhand): 
 
         rhand_x, rhand_y = rhand[0], rhand[1]; 
@@ -232,7 +231,6 @@ class uavController:
 
         return deadzone_rect      
 
-
     # 1D checking if in range  
     def check_if_in_range(self, value, min_value, max_value): 
 
@@ -307,7 +305,7 @@ class uavController:
 
     def run_position_ctl(self, lhand, rhand):
 
-                # Convert predictions into drone positions. Goes from [1, movement_available]
+        # Convert predictions into drone positions. Goes from [1, movement_available]
         # NOTE: image is mirrored, so left control area in preds corresponds to the right hand movements 
         pose_cmd = Pose()        
         if self.recv_pose_meas and not self.start_position_ctl:
@@ -332,68 +330,7 @@ class uavController:
             rospy.logdebug("Left hand: {}".format(lhand))
             rospy.logdebug("Right hand: {}".format(rhand))
             
-
-            if self.check_if_in_range(lhand[0], self.rotation_deadzone[0], self.rotation_deadzone[1]):                                      
-                rospy.logdebug("Left hand inside of rotation area!")
-                if self.check_if_in_range(lhand[1], self.height_area[0], self.height_deadzone[0]):
-                    pose_cmd.position.z += increase
-                    rospy.logdebug("Increasing z!")
-                elif self.check_if_in_range(lhand[1], self.height_deadzone[1], self.height_area[1]):
-                    pose_cmd.position.z -= decrease  
-                    rospy.logdebug("Decreasing z!")
-     
-            #if self.check_if_in_range(lhand[1], self.height_area[0], self.height_area[1]):
-            #    rospy.logdebug("Left hand inside of the height deadzone!")   
-            #    if (self.check_if_in_range(lhand[0], self.rotation_deadzone[0], self.rotation_area[1])):
-            #        pose_cmd.orientation.z += increase 
-            # # TODO: Generate orientation correctly for quaternion
-            #        rospy.logdebug("Increasing yaw!")
-            #    
-            #    elif(self.check_if_in_range(lhand[0], self.rotation_area[0], self.rotation_deadzone[1])):
-            #        pose_cmd.orientation.z -= decrease
-            #        rospy.logdebug("Decreasing yaw!")
-            
-            # Converter for x and y movements. Left hand is [15]   
-            if self.check_if_in_range(rhand[0], self.x_area[0], self.x_area[1]):
-
-                if (self.check_if_in_range(rhand[1], self.y_deadzone[1], self.y_area[1])):
-                    pose_cmd.position.y -= increase
-                    rospy.logdebug("Increasing y!")
-
-                elif (self.check_if_in_range(rhand[1], self.y_area[0], self.y_deadzone[0])):
-                    pose_cmd.position.y += decrease         
-                    rospy.logdebug("Decreasing y!")   
-
-            if self.check_if_in_range(rhand[1], self.y_area[0], self.y_area[1]):
-                rospy.logdebug("Right hand inside of y area!")
-                if self.check_if_in_range(rhand[0], self.x_deadzone[1], self.x_area[1]):
-                    pose_cmd.position.x += increase    
-                    rospy.logdebug("Increasing x!")
-
-                elif self.check_if_in_range(rhand[0], self.x_area[0], self.x_deadzone[0]): 
-                    pose_cmd.position.x -= decrease
-                    rospy.logdebug("Decreasing x!")            
-            
-
-            rospy.loginfo("x:{0} \t y: {1} \t , z: {2} \t , rot: {3} \t".format(round(pose_cmd.position.x, 3),
-                                                                                round(pose_cmd.position.y, 3),
-                                                                                round(pose_cmd.position.z, 3),
-                                                                                round(pose_cmd.orientation.z, 3)))
-            self.prev_pose_cmd = pose_cmd
-            self.pose_pub.publish(pose_cmd)
-
-
-        # If not started yet, put both hand in the middle of the deadzones to start        
-        else:
-            # Good condition for starting 
-            if rhand[0] > self.rotation_deadzone[0] and rhand[0] < self.rotation_deadzone[1] and rhand[1] > self.height_deadzone[0] and rhand[0] < self.height_deadzone[1]:
-                if lhand[0] > self.x_deadzone[0] and lhand[1] < self.x_deadzone[1] and lhand[1] > self.y_deadzone[0] and lhand[1] < self.y_deadzone[1]:
-                    rospy.loginfo("Started!")
-                    self.start_position_ctl = True
-
-
-        duration = rospy.Time.now().to_sec() - start_time
-    
+        # TODO: Implement position change in same way it has been implemented for joy control     
     def run_joy_ctl(self, lhand, rhand): 
 
         joy_msg = Joy()
@@ -504,7 +441,6 @@ class uavController:
         return rgb_img
 
         
-
 if __name__ == '__main__':
 
     uC = uavController(sys.argv[1])
