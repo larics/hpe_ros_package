@@ -332,7 +332,7 @@ class HumanPoseEstimationROS():
                 rospy.logdebug("Preds are: {}".format(preds))     
                 rospy.logdebug("Preds shape is: {}".format(preds.shape))
                 # Preds shape is [1, 16, 2] (or num persons is first dim)
-                rospy.loginfo("Preds shape is: {}".format(preds[0].shape))
+                # rospy.loginfo("Preds shape is: {}".format(preds[0].shape))
                 
                 preds = self.filter_predictions(preds, "avg", 7)
 
