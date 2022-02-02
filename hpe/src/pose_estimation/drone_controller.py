@@ -36,7 +36,7 @@ class uavController:
         # Define zones / dependant on input video image 
         self.height = 480; self.width = 640; 
 
-        self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect = self.define_ctl_zones(self.width, self.height, 0.1, 0.05)
+        self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect = self.define_ctl_zones(self.width, self.height, 0.2, 0.03)
 
         self.l_deadzone = self.define_deadzones(self.height_rect, self.yaw_rect)
         self.r_deadzone = self.define_deadzones(self.pitch_rect, self.roll_rect)
@@ -300,8 +300,8 @@ class uavController:
         joy_msg = Joy()
 
         joy_msg.header.stamp = rospy.Time.now()
-        joy_msg.axes = [roll, pitch, height, yaw]
-        joy_msg.buttons = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        joy_msg.axes = [yaw, height, roll, pitch]
+        joy_msg.buttons = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
         return joy_msg
 
@@ -408,7 +408,13 @@ class uavController:
         pitch_cmd = pitch_h
 
         roll_w, roll_h = self.in_ctl_zone(rhand, self.roll_rect, 20, orientation="horizontal")
-        roll_cmd = roll_w
+        roll_cmd = roll_w 
+
+        reverse_dir = -1
+        # Added reverse because rc joystick has reverse
+        reverse = True 
+        if reverse: 
+            roll_cmd  *= reverse_dir
 
         rospy.logdebug("Height cmd: {}".format(height_cmd))
         rospy.logdebug("Yaw cmd: {}".format(yaw_cmd))
@@ -419,7 +425,7 @@ class uavController:
         joy_msg = self.compose_joy_msg(pitch_cmd, roll_cmd, yaw_cmd, height_cmd)
 
         # Publish composed joy msg
-        return joy_msg
+        self.joy_pub.publish(joy_msg)
 
     def run(self): 
         #rospy.spin()
@@ -440,7 +446,6 @@ class uavController:
 
                 if self.control_type == "euler": 
                     
-                    rospy.logdebug("Checking start condition!")
                     if self.in_zone(lhand_, self.l_deadzone) and self.in_zone(rhand_, self.r_deadzone):
                         self.start_joy_ctl = True            
                     

@@ -2,7 +2,7 @@
 <launch>
     
     <!-- Determine HPE + UAV ctl responsivness min(1)/max(209)-->
-    <arg name="ctl_freq" value="1"/>
+    <arg name="ctl_freq" value="10"/>
 
     <!-- Launch usb_cam and HPE -->
     <include file="$(find hpe)/launch/webcam_inference.launch"/>
