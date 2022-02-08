@@ -47,11 +47,19 @@ class uavController:
         self.start_joy_ctl = False
         self.rate = rospy.Rate(int(frequency))     
 
+        # Debugging arguments
         self.inspect_keypoints = False
         self.recv_pose_meas = False
-
+        
+        # Image compression for human-machine interface
         self.hmi_integration = False
 
+        # If calibration determine zone-centers
+        self.calibration = True
+        self.calib_duration = 10
+        self.rhand_calib_px, self.rhand_calib_py = [], []
+        self.lhand_calib_px, self.lhand_calib_py = [], []
+        # Flags for run method
         self.initialized = True
         self.prediction_started = False
 
@@ -189,7 +197,11 @@ class uavController:
         duration = rospy.Time().now().to_sec() - start_time
         #rospy.loginfo("stickman_cb duration is: {}".format(duration))
 
-    def define_ctl_zones(self, img_width, img_height, edge_offset, rect_width):
+    def define_ctl_zones(self, img_width, img_height, edge_offset, rect_width, calibration_points=None, calibration=False):
+
+        if calibration:
+            cx1, cy1 = calibration_points[0][0], calibration_points[0][1]
+            cx2, cy2 = calibration_points[1][0], calibration_points[1][1]
         
         # img center
         cx, cy = img_width/2, img_height/2
@@ -218,6 +230,7 @@ class uavController:
         
         return height_rect, yaw_rect, pitch_rect, roll_rect
     
+
     def define_deadzones(self, rect1, rect2):
 
         # valid if first rect vertical, second rect horizontal
@@ -367,6 +380,8 @@ class uavController:
     def run(self): 
         #rospy.spin()
 
+        self.start_run_time = rospy.Time.now().to_sec()
+
         while not rospy.is_shutdown():
             if not self.initialized or not self.prediction_started: 
                 rospy.logdebug("Waiting prediction")
@@ -376,6 +391,30 @@ class uavController:
                 # Reverse mirroring operation: 
                 lhand_ = (abs(self.lhand[0] - self.width), self.lhand[1])
                 rhand_ = (abs(self.rhand[0] - self.width), self.rhand[1])
+
+
+                if self.calibration: 
+                    # Added dummy sleep to test calibration
+                    duration = rospy.Time.now().to_sec() - self.start_run_time
+                    rospy.logdebug("Calibration is: {}".format(duration))
+                    # TODO: Add calibration on trigger 
+                    if duration < self.calib_duration: 
+                        self.control_type = "None"
+                        rospy.logdebug("Running calibration...")
+                        self.rhand_calib_px.append(rhand_[0]), self.rhand_calib_py.append(rhand_[1])
+                        self.lhand_calib_px.append(lhand_[0]), self.lhand_calib_py.append(lhand_[1])
+                    
+                    else:
+                        
+                        avg_rhand = (sum(self.rhand_calib_px)/len(self.rhand_calib_px), sum(self.rhand_calib_py)/len(self.lhand_calib_py))
+                        avg_lhand = (sum(self.lhand_calib_py)/len(self.lhand_calib_px), sum(self.lhand_calib_py)/len(self.lhand_calib_py))
+                        calib_points = (avg_rhand, avg_lhand)
+                        rospy.logdebug("Calib points are: {}".format(calib_points))
+                        self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect =  self.define_ctl_zones(self.width, self.height, 0.2, 0.03, calib_points, calibration=True)
+                        self.l_deadzone = self.define_deadzones(self.height_rect, self.yaw_rect)
+                        self.r_deadzone = self.define_deadzones(self.pitch_rect, self.roll_rect)
+                        self.control_type = "euler"
+                        self.calibration = False
 
                 if self.control_type == "position": 
 
