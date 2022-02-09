@@ -1,4 +1,5 @@
 #!/opt/conda/bin/python3
+import queue
 from turtle import width
 import rospy
 import rospkg
@@ -7,14 +8,14 @@ import cv2
 import numpy
 
 from geometry_msgs.msg import Pose, PoseStamped
-from std_msgs.msg import Float64MultiArray, Int32
+from std_msgs.msg import Float64MultiArray, Int32, Bool
 from sensor_msgs.msg import Image, CompressedImage, Joy
 
 from PIL import ImageDraw, ImageOps, ImageFont
 from PIL import Image as PILImage
 
 # TODO:
-# - think of behavior when arm goes out of range!
+# - think of behavior when arm goes out of range! --> best to do nothing, just send references when there's signal from HPE 
 
 class uavController:
 
@@ -55,16 +56,16 @@ class uavController:
         self.hmi_integration = False
 
         # If calibration determine zone-centers
-        self.calibration = True
+        self.start_calib = False
         self.calib_duration = 10
         self.rhand_calib_px, self.rhand_calib_py = [], []
         self.lhand_calib_px, self.lhand_calib_py = [], []
+        
         # Flags for run method
         self.initialized = True
         self.prediction_started = False
 
         rospy.loginfo("Initialized!")   
-
 
     def _init_publishers(self): 
         
@@ -88,6 +89,7 @@ class uavController:
         self.preds_sub          = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
         self.stickman_sub       = rospy.Subscriber("stickman", Image, self.draw_zones_cb, queue_size=1)
         self.current_pose_sub   = rospy.Subscriber("uav/pose", PoseStamped, self.curr_pose_cb, queue_size=1)
+        self.start_calib_sub    = rospy.Subscriber("start_calibration", Bool, self.calib_cb, queue_size=1)
            
     def publish_predicted_keypoints(self, rhand, lhand): 
 
@@ -131,6 +133,12 @@ class uavController:
 
         if self.inspect_keypoints:  
             self.publish_predicted_keypoints(self.rhand, self.lhand)
+
+    def calib_cb(self, msg): 
+        
+        self.start_calib = msg.data
+
+        self.start_calib_time = rospy.Time.now().to_sec()
 
     def draw_zones_cb(self, stickman_img):
         
@@ -189,19 +197,14 @@ class uavController:
             compressed_msg = uavController.convert_pil_to_ros_compressed(img, color_conversion="True")
             self.stickman_compressed_area_pub.publish(compressed_msg)            
 
-        else: 
-            
+        else:             
             ros_msg = uavController.convert_pil_to_ros_img(img) 
             self.stickman_area_pub.publish(ros_msg)
 
         duration = rospy.Time().now().to_sec() - start_time
         #rospy.loginfo("stickman_cb duration is: {}".format(duration))
 
-    def define_ctl_zones(self, img_width, img_height, edge_offset, rect_width, calibration_points=None, calibration=False):
-
-        if calibration:
-            cx1, cy1 = calibration_points[0][0], calibration_points[0][1]
-            cx2, cy2 = calibration_points[1][0], calibration_points[1][1]
+    def define_ctl_zones(self, img_width, img_height, edge_offset, rect_width):
         
         # img center
         cx, cy = img_width/2, img_height/2
@@ -229,8 +232,29 @@ class uavController:
         roll_rect = ((cx + width_edge, cy-r_width), (img_width - width_edge, cy + r_width))
         
         return height_rect, yaw_rect, pitch_rect, roll_rect
-    
 
+    def define_calibrated_ctl_zones(self, calibration_points, img_w, img_h, w_perc=0.2, h_perc=0.3, rect_perc=0.05):
+
+        
+        cx1, cy1 = calibration_points[0][0], calibration_points[0][1]
+        cx2, cy2 = calibration_points[1][0], calibration_points[1][1]
+
+        # main_control dimensions
+        a = img_w * w_perc
+        b = img_h * h_perc
+
+        # control_rect width
+        c = img_w * rect_perc
+        d = img_h * rect_perc
+
+        # Define rectangles for heigh, yaw, pitch and roll
+        height_rect     = ((cx1 - c, cy1 - b), (cx1 + c, cy1 + b))
+        yaw_rect        = ((cx1 - a, cy1 - d), (cx1 + a, cy1 + d))
+        pitch_rect      = ((cx2 - c, cy2 - b), (cx2 + c, cy2 + b))
+        roll_rect       = ((cx2 - a, cy2 - d), (cx2 + a, cy2 + d))
+
+        return height_rect, yaw_rect, pitch_rect, roll_rect    
+    
     def define_deadzones(self, rect1, rect2):
 
         # valid if first rect vertical, second rect horizontal
@@ -343,7 +367,7 @@ class uavController:
             rospy.logdebug("Left hand: {}".format(lhand))
             rospy.logdebug("Right hand: {}".format(rhand))
             
-        # TODO: Implement position change in same way it has been implemented for joy control     
+    # TODO: Implement position change in same way it has been implemented for joy control     
     def run_joy_ctl(self, lhand, rhand): 
 
         joy_msg = Joy()
@@ -361,7 +385,7 @@ class uavController:
         roll_cmd = roll_w 
 
         reverse_dir = -1
-        # Added reverse because rc joystick has reverse
+        # Added reverse because rc joystick implementation has reverse
         reverse = True 
         if reverse: 
             roll_cmd  *= reverse_dir
@@ -380,8 +404,6 @@ class uavController:
     def run(self): 
         #rospy.spin()
 
-        self.start_run_time = rospy.Time.now().to_sec()
-
         while not rospy.is_shutdown():
             if not self.initialized or not self.prediction_started: 
                 rospy.logdebug("Waiting prediction")
@@ -393,28 +415,27 @@ class uavController:
                 rhand_ = (abs(self.rhand[0] - self.width), self.rhand[1])
 
 
-                if self.calibration: 
+                if self.start_calib:
+
                     # Added dummy sleep to test calibration
-                    duration = rospy.Time.now().to_sec() - self.start_run_time
-                    rospy.logdebug("Calibration is: {}".format(duration))
-                    # TODO: Add calibration on trigger 
-                    if duration < self.calib_duration: 
-                        self.control_type = "None"
-                        rospy.logdebug("Running calibration...")
+                    duration = rospy.Time.now().to_sec() - self.start_calib_time
+                    if duration < self.calib_duration:
+                        # Disable calibration during execution  
+                        self.control_type = "None"  
                         self.rhand_calib_px.append(rhand_[0]), self.rhand_calib_py.append(rhand_[1])
                         self.lhand_calib_px.append(lhand_[0]), self.lhand_calib_py.append(lhand_[1])
                     
                     else:
                         
-                        avg_rhand = (sum(self.rhand_calib_px)/len(self.rhand_calib_px), sum(self.rhand_calib_py)/len(self.lhand_calib_py))
-                        avg_lhand = (sum(self.lhand_calib_py)/len(self.lhand_calib_px), sum(self.lhand_calib_py)/len(self.lhand_calib_py))
+                        avg_rhand = (int(sum(self.rhand_calib_px)/len(self.rhand_calib_px)), int(sum(self.rhand_calib_py)/len(self.lhand_calib_py)))
+                        avg_lhand = (int(sum(self.lhand_calib_py)/len(self.lhand_calib_px)), int(sum(self.lhand_calib_py)/len(self.lhand_calib_py)))
                         calib_points = (avg_rhand, avg_lhand)
                         rospy.logdebug("Calib points are: {}".format(calib_points))
-                        self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect =  self.define_ctl_zones(self.width, self.height, 0.2, 0.03, calib_points, calibration=True)
+                        self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect =  self.define_calibrated_ctl_zones(calib_points, self.width, self.height)
                         self.l_deadzone = self.define_deadzones(self.height_rect, self.yaw_rect)
                         self.r_deadzone = self.define_deadzones(self.pitch_rect, self.roll_rect)
                         self.control_type = "euler"
-                        self.calibration = False
+                        self.start_calib = False
 
                 if self.control_type == "position": 
 
