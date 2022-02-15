@@ -384,7 +384,6 @@ class HumanPoseEstimationROS():
 
         font_ = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/include/arial.ttf", 20, encoding="unic")
 
-
         point_r = 4
 
         ctl_indices = [10, 15]
