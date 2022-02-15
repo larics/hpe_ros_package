@@ -19,7 +19,7 @@ from PIL import Image as PILImage
 
 class uavController:
 
-    def __init__(self, frequency):
+    def __init__(self, frequency, use_calibration):
 
         nn_init_time_sec = 10
         rospy.init_node("uav_controller", log_level=rospy.DEBUG)
@@ -34,7 +34,7 @@ class uavController:
 
         self._init_publishers(); self._init_subscribers(); 
 
-        # Define zones / dependant on input video image 
+        # Define zones / dependent on input video image 
         self.height = 480; self.width = 640; 
 
         self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect = self.define_ctl_zones(self.width, self.height, 0.2, 0.03)
@@ -53,10 +53,13 @@ class uavController:
         self.recv_pose_meas = False
         
         # Image compression for human-machine interface
-        self.hmi_integration = False
+        self.hmi_compression = False
 
         # If calibration determine zone-centers
         self.start_calib = False
+
+
+        # Initialize start calib time to very large value to start calibration when i publish to topic
         self.calib_duration = 10
         self.rhand_calib_px, self.rhand_calib_py = [], []
         self.lhand_calib_px, self.lhand_calib_py = [], []
@@ -192,7 +195,7 @@ class uavController:
         # Check what this mirroring does here! --> mirroring is neccessary to see ourselves when operating 
         #rospy.loginfo("Publishing stickman with zones!")
 
-        if self.hmi_integration: 
+        if self.hmi_compression: 
             rospy.loginfo("Compressing zones")
             compressed_msg = uavController.convert_pil_to_ros_compressed(img, color_conversion="True")
             self.stickman_compressed_area_pub.publish(compressed_msg)            
@@ -414,7 +417,6 @@ class uavController:
                 lhand_ = (abs(self.lhand[0] - self.width), self.lhand[1])
                 rhand_ = (abs(self.rhand[0] - self.width), self.rhand[1])
 
-
                 if self.start_calib:
 
                     # Added dummy sleep to test calibration
@@ -500,8 +502,10 @@ class uavController:
         
         return rgb_img
 
+def str2bool(v):
+  return v.lower() in ("yes", "true", "t", "1")
         
 if __name__ == '__main__':
 
-    uC = uavController(sys.argv[1])
+    uC = uavController(sys.argv[1], sys.argv[2])
     uC.run()
