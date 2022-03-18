@@ -30,22 +30,42 @@ class uavController:
         self.current_z = 1
         self.current_rot = 0
 
-        self.control_type = "euler" #position
+        # Available control types are: euler, euler2d 
+        self.control_type = "euler2d" 
 
         self._init_publishers(); self._init_subscribers(); 
 
         # Define zones / dependent on input video image 
         self.height = 480; self.width = 640; 
 
-        self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect = self.define_ctl_zones(self.width, self.height, 0.2, 0.03)
+        # Decoupled control  
+        if self.control_type == "euler": 
+            
+            # 1D control zones
+            self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect = self.define_ctl_zones(self.width, self.height, 0.2, 0.05)
+            self.start_joy_ctl = False
 
+        # Coupled control --> Yaw/Height on same axis, Roll/Pitch on same axis
+        if self.control_type == "euler2d": 
+
+            # 2D control zones
+            self.r_zone = self.define_ctl_zone( self.width/4, self.height/1.5, 3 * self.width/4, self.height/2)
+            self.l_zone = self.define_ctl_zone( self.width/4, self.height/1.5, self.width/4, self.height/2)
+
+            rospy.logdebug("Right zone: {}".format(self.r_zone))
+            rospy.logdebug("Left zone: {}".format(self.l_zone))
+
+            self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect = self.define_2d_ctl_zones(self.l_zone, self.r_zone, 30)
+            self.start_joy2d_ctl = False
+
+        # Define deadzones
         self.l_deadzone = self.define_deadzones(self.height_rect, self.yaw_rect)
         self.r_deadzone = self.define_deadzones(self.pitch_rect, self.roll_rect)
 
         self.font = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/include/arial.ttf", 20, encoding="unic")
 
         self.start_position_ctl = False
-        self.start_joy_ctl = False
+        
         self.rate = rospy.Rate(int(frequency))     
 
         # Debugging arguments
@@ -57,7 +77,6 @@ class uavController:
 
         # If calibration determine zone-centers
         self.start_calib = False
-
 
         # Initialize start calib time to very large value to start calibration when i publish to topic
         self.calib_duration = 10
@@ -155,6 +174,11 @@ class uavController:
         
         # Draw rectangles which represent areas for control
         draw = ImageDraw.Draw(img, "RGBA")
+
+        if self.control_type == "euler2d": 
+
+            draw.rectangle(self.l_zone, width = 3)
+            draw.rectangle(self.r_zone, width = 3)
         
         # Rect for yaw
         draw.rectangle(self.yaw_rect, fill=(178,34,34, 100), width=2)       
@@ -238,7 +262,6 @@ class uavController:
 
     def define_calibrated_ctl_zones(self, calibration_points, img_w, img_h, w_perc=0.2, h_perc=0.3, rect_perc=0.05):
 
-        
         cx1, cy1 = calibration_points[0][0], calibration_points[0][1]
         cx2, cy2 = calibration_points[1][0], calibration_points[1][1]
 
@@ -404,6 +427,78 @@ class uavController:
         # Publish composed joy msg
         self.joy_pub.publish(joy_msg)
 
+        # Define rect for ctl zone 
+    
+    # 2D control 
+    def define_ctl_zone(self, w, h, cx, cy):
+
+        ctl_rect = ((cx - w/2, cy - h/2), (cx + w/2, cy + h/2))
+
+        return ctl_rect 
+
+    # TODO: Fix this part!
+    def define_2d_ctl_zones(self, l_zone, r_zone, deadzone): 
+
+        cx1, cy1 = (l_zone[0][0] + l_zone[0][1])/2, (l_zone[1][0] + l_zone[1][1])/2
+        cx2, cy2 = (r_zone[0][0] + r_zone[0][1])/2, (r_zone[1][0] + r_zone[1][1])/2
+
+        rospy.logdebug("cx1, cy1: {}, {}".format(cx1, cy1))
+        rospy.logdebug("cx2, cy2: {}, {}".format(cx2, cy2))
+        
+        height_rect = ((cx1 - deadzone, l_zone[0][1]), (cx1 + deadzone, l_zone[1][1]))
+        yaw_rect = ((l_zone[0][0], cy1 - deadzone), (l_zone[1][0], cy1 + deadzone))
+        pitch_rect = ((cx2 - deadzone, r_zone[0][1]), (cx2 + deadzone, r_zone[1][1]))
+        roll_rect = ((r_zone[0][0], cy2 - deadzone), (r_zone[1][0], cy2 + deadzone))
+
+        return height_rect, yaw_rect, pitch_rect, roll_rect
+
+    def in_ctl2d_zone(self, point, rect, deadzone): 
+
+        x, y = point[0], point[1]
+        x0, y0 = rect[0][0], rect[0][1]
+        x1, y1 = rect[1][0], rect[1][1]
+        cx, cy = x1 - x0 / 2, y1 - y0 / 2
+        
+        if self.in_zone(point, rect): 
+
+            if abs(cx - x) > deadzone: 
+                norm_x_diff = (cx - x) / ((x1 - x0) / 2)
+            else: 
+                norm_x_diff = 0.0
+
+            if abs(cy - y) > deadzone: 
+                norm_y_diff = (cy - y) / ((y1 - y0) / 2)
+            else: 
+                norm_y_diff = 0.0
+        
+        else: 
+
+            norm_x_diff, norm_y_diff = 0.0
+
+        return norm_x_diff, norm_y_diff
+
+    def run_joy2d_ctl(self, lhand, rhand): 
+
+        yaw_cmd, height_cmd = self.in_ctl2d_zone(lhand, self.l_ctl_zone, 20)
+        pitch_cmd, roll_cmd = self.in_ctl2d_zone(rhand, self.r_ctl_zone, 20)
+
+        reverse_dir = -1
+        # Added reverse because rc joystick implementation has reverse
+        reverse = True 
+        if reverse: 
+            roll_cmd  *= reverse_dir
+
+        rospy.logdebug("Height cmd: {}".format(height_cmd))
+        rospy.logdebug("Yaw cmd: {}".format(yaw_cmd))
+        rospy.logdebug("Pitch cmd: {}".format(pitch_cmd))
+        rospy.logdebug("Roll cmd: {}".format(roll_cmd))
+
+        # Compose from commands joy msg
+        joy_msg = self.compose_joy_msg(pitch_cmd, roll_cmd, yaw_cmd, height_cmd)
+
+        # Publish composed joy msg
+        self.joy_pub.publish(joy_msg)
+         
     def run(self): 
         #rospy.spin()
 
@@ -428,31 +523,57 @@ class uavController:
                         self.lhand_calib_px.append(lhand_[0]), self.lhand_calib_py.append(lhand_[1])
                     
                     else:
-                        
-                        avg_rhand = (int(sum(self.rhand_calib_px)/len(self.rhand_calib_px)), int(sum(self.rhand_calib_py)/len(self.lhand_calib_py)))
+                        avg_rhand = (int(sum(self.rhand_calib_px)/len(self.rhand_calib_px)), int(sum(self.rhand_calib_py)/len(self.rhand_calib_py)))
                         avg_lhand = (int(sum(self.lhand_calib_py)/len(self.lhand_calib_px)), int(sum(self.lhand_calib_py)/len(self.lhand_calib_py)))
-                        calib_points = (avg_rhand, avg_lhand)
-                        rospy.logdebug("Calib points are: {}".format(calib_points))
+                        calib_points = (avg_lhand, avg_rhand)
                         self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect =  self.define_calibrated_ctl_zones(calib_points, self.width, self.height)
                         self.l_deadzone = self.define_deadzones(self.height_rect, self.yaw_rect)
                         self.r_deadzone = self.define_deadzones(self.pitch_rect, self.roll_rect)
                         self.control_type = "euler"
                         self.start_calib = False
 
+                        # Calibration
+                        zone_debug = False 
+                        if zone_debug:
+                            rospy.loginfo("Calib points are: {}".format(calib_points))
+                            rospy.loginfo("Height rect: {}".format(self.height_rect))
+                            rospy.loginfo("Yaw rect: {}".format(self.yaw_rect))
+                            rospy.loginfo("Pitch rect: {}".format(self.pitch_rect))
+                            rospy.loginfo("Roll rect: {}".format(self.roll_rect))
+                            rospy.loginfo("Right deadzone: {}".format(self.r_deadzone))
+                            rospy.loginfo("Left deadzone: {}".format(self.l_deadzone))
+
+
                 if self.control_type == "position": 
 
                     self.run_position_ctl(lhand_, rhand_)
 
                 if self.control_type == "euler": 
-                    
+
+                    rospy.loginfo("rhand_: {}".format(rhand_))
+                    rospy.loginfo("lhand_: {}".format(lhand_))
+                    rospy.loginfo("r_deadzone: {}".format(self.r_deadzone))
+                    rospy.loginfo("l_deadzone: {}".format(self.l_deadzone))
+
                     if self.in_zone(lhand_, self.l_deadzone) and self.in_zone(rhand_, self.r_deadzone):
-                        self.start_joy_ctl = True            
+                        self.start_joy_ctl = True 
+                    else:
+                        rospy.loginfo("Not in deadzones!")           
                     
                     if self.start_joy_ctl:
                         self.run_joy_ctl(lhand_, rhand_)
 
-                self.rate.sleep()
+                if self.control_type == "euler2d": 
+                    
+                    if self.in_zone(lhand_, self.l_deadzone) and self.in_zone(rhand_, self.r_deadzone):
+                        self.start_joy2d_ctl = True 
+                    else:
+                        rospy.loginfo("Not in deadzones!")        
+                    
+                    if self.start_joy2d_ctl: 
+                        self.run_joy2d_ctl(lhand_, rhand_)
 
+                self.rate.sleep()
 
     @staticmethod
     def convert_pil_to_ros_img(img):
