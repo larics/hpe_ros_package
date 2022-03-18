@@ -72,11 +72,13 @@ class uavController:
         self.inspect_keypoints = False
         self.recv_pose_meas = False
         
+
         # Image compression for human-machine interface
         self.hmi_compression = False
-
         # If calibration determine zone-centers
         self.start_calib = False
+        # If use depth
+        self.use_depth = True
 
         # Initialize start calib time to very large value to start calibration when i publish to topic
         self.calib_duration = 10
@@ -112,6 +114,7 @@ class uavController:
         self.stickman_sub       = rospy.Subscriber("stickman", Image, self.draw_zones_cb, queue_size=1)
         self.current_pose_sub   = rospy.Subscriber("uav/pose", PoseStamped, self.curr_pose_cb, queue_size=1)
         self.start_calib_sub    = rospy.Subscriber("start_calibration", Bool, self.calib_cb, queue_size=1)
+        self.depth_sub          = rospy.Subscriber("/camera/depth/image_rect", Image, self.depth_cb, queue_size=1)
            
     def publish_predicted_keypoints(self, rhand, lhand): 
 
@@ -230,6 +233,9 @@ class uavController:
 
         duration = rospy.Time().now().to_sec() - start_time
         #rospy.loginfo("stickman_cb duration is: {}".format(duration))
+    def depth_cb(self, msg): 
+
+        self.depth_msg = msg.data
 
     def define_ctl_zones(self, img_width, img_height, edge_offset, rect_width):
         
