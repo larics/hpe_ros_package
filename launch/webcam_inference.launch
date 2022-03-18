@@ -3,6 +3,7 @@
     <arg name="frequency" value="5"/>
     <arg name="video_dev" value="/dev/video0"/>
     <arg name="model_path" value="/home/developer/catkin_ws/src/hpe_ros_package/src/models/pose_resnet_152_384x384.pth.tar"/>
+    <arg name="depth_cam" value="true"/>
     
     <!-- config files for each backbone model are located into experiments folder !-->
     <arg name="config_file" value="/home/developer/catkin_ws/src/hpe_ros_package/src/experiments/mpii/resnet152/384x384_d256x3_adam_lr1e-3.yaml"/>
@@ -13,15 +14,23 @@
     <!--https://github.com/ms-iot/vscode-ros/blob/master/doc/spec/debug-ros-nodes.md!--> 
     <node name="hand_pose_estimation_node" pkg="hpe_ros_package" type="hand_pose_estimation.py" args="$(arg frequency) " output="screen" />
     ?>    
+    <group if="$(arg depth_cam)">
+        <include file="$(find openni2_launch)/launch/openni2.launch"/>
+    </group>
 
-    <node name="usb_camera" pkg="usb_cam" type="usb_cam_node" launch-prefix="bash -c 'sleep 5; $0 $@'" output="screen" >
-        <param name="video_device" value="$(arg video_dev)" />  
-        <param name="image_width" value="640" />
-        <param name="image_height" value="480" />
-        <param name="pixel_format" value="yuyv" />
-        <param name="camera_frame_id" value="usb_cam" />
-        <param name="io_method" value="mmap"/>
-    </node>
+    <group unless="$(arg depth_cam)">
+
+        <node name="usb_camera" pkg="usb_cam" type="usb_cam_node" launch-prefix="bash -c 'sleep 5; $0 $@'" output="screen" >
+            <param name="video_device" value="$(arg video_dev)" />  
+            <param name="image_width" value="640" />
+            <param name="image_height" value="480" />
+            <param name="pixel_format" value="yuyv" />
+            <param name="camera_frame_id" value="usb_cam" />
+            <param name="io_method" value="mmap"/>
+        </node>
+
+    </group>
+
     
 </launch>
 
