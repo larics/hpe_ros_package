@@ -55,7 +55,7 @@ class uavController:
             rospy.logdebug("Right zone: {}".format(self.r_zone))
             rospy.logdebug("Left zone: {}".format(self.l_zone))
 
-            self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect = self.define_2d_ctl_zones(self.l_zone, self.r_zone, 30)
+            self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect = self.define_2d_ctl_zones(self.l_zone, self.r_zone, 25)
             self.start_joy2d_ctl = False
 
         # Define deadzones
@@ -95,7 +95,7 @@ class uavController:
         if self.control_type == "position":
             self.pose_pub = rospy.Publisher("bebop/pos_ref", Pose, queue_size=1)
 
-        if self.control_type == "euler": 
+        if self.control_type == "euler" or self.control_type == "euler2d": 
             self.joy_pub = rospy.Publisher("/joy", Joy, queue_size=1)
 
         self.stickman_area_pub = rospy.Publisher("/stickman_cont_area", Image, queue_size=1)
@@ -439,16 +439,23 @@ class uavController:
     # TODO: Fix this part!
     def define_2d_ctl_zones(self, l_zone, r_zone, deadzone): 
 
-        cx1, cy1 = (l_zone[0][0] + l_zone[0][1])/2, (l_zone[1][0] + l_zone[1][1])/2
-        cx2, cy2 = (r_zone[0][0] + r_zone[0][1])/2, (r_zone[1][0] + r_zone[1][1])/2
+        cx1, cy1 = (l_zone[0][0] + l_zone[1][0])/2, (l_zone[0][1] + l_zone[1][1])/2
+        cx2, cy2 = (r_zone[0][0] + r_zone[1][0])/2, (r_zone[0][1] + r_zone[1][1])/2
 
         rospy.logdebug("cx1, cy1: {}, {}".format(cx1, cy1))
         rospy.logdebug("cx2, cy2: {}, {}".format(cx2, cy2))
         
         height_rect = ((cx1 - deadzone, l_zone[0][1]), (cx1 + deadzone, l_zone[1][1]))
-        yaw_rect = ((l_zone[0][0], cy1 - deadzone), (l_zone[1][0], cy1 + deadzone))
         pitch_rect = ((cx2 - deadzone, r_zone[0][1]), (cx2 + deadzone, r_zone[1][1]))
+
         roll_rect = ((r_zone[0][0], cy2 - deadzone), (r_zone[1][0], cy2 + deadzone))
+        yaw_rect = ((l_zone[0][0], cy1 - deadzone), (l_zone[1][0], cy1 + deadzone))
+
+        rospy.logdebug("Height: {}".format(height_rect))
+        rospy.logdebug("Pitch: {}".format(pitch_rect))
+        rospy.logdebug("Roll: {}".format(roll_rect))
+        rospy.logdebug("Yaw: {}".format(yaw_rect))
+
 
         return height_rect, yaw_rect, pitch_rect, roll_rect
 
@@ -457,30 +464,39 @@ class uavController:
         x, y = point[0], point[1]
         x0, y0 = rect[0][0], rect[0][1]
         x1, y1 = rect[1][0], rect[1][1]
-        cx, cy = x1 - x0 / 2, y1 - y0 / 2
+        cx, cy = (x1 + x0) / 2, (y1 + y0) / 2
+
+        rospy.logdebug("x0: {}\t x1: {}".format(x0, x1))
+        rospy.logdebug("y0: {}\t y1: {}".format(y0, y1))
+        rospy.logdebug("cx: {}".format(cx))
+        rospy.logdebug("cy: {}".format(cy))
         
         if self.in_zone(point, rect): 
+            
+            rospy.logdebug("x: {}".format(x))
+
+            rospy.logdebug("y: {}".format(y))
 
             if abs(cx - x) > deadzone: 
-                norm_x_diff = (cx - x) / ((x1 - x0) / 2)
+                norm_x_diff = (x - cx) / ((x1 - x0) / 2)
             else: 
                 norm_x_diff = 0.0
 
             if abs(cy - y) > deadzone: 
-                norm_y_diff = (cy - y) / ((y1 - y0) / 2)
+                norm_y_diff = (y - cy) / ((y1 - y0) / 2)
             else: 
                 norm_y_diff = 0.0
         
         else: 
 
-            norm_x_diff, norm_y_diff = 0.0
+            norm_x_diff, norm_y_diff = 0.0, 0.0
 
         return norm_x_diff, norm_y_diff
 
     def run_joy2d_ctl(self, lhand, rhand): 
 
-        yaw_cmd, height_cmd = self.in_ctl2d_zone(lhand, self.l_ctl_zone, 20)
-        pitch_cmd, roll_cmd = self.in_ctl2d_zone(rhand, self.r_ctl_zone, 20)
+        yaw_cmd, height_cmd = self.in_ctl2d_zone(lhand, self.l_zone, 25)
+        pitch_cmd, roll_cmd = self.in_ctl2d_zone(rhand, self.r_zone, 25)
 
         reverse_dir = -1
         # Added reverse because rc joystick implementation has reverse
@@ -488,6 +504,7 @@ class uavController:
         if reverse: 
             roll_cmd  *= reverse_dir
 
+        # Test!
         rospy.logdebug("Height cmd: {}".format(height_cmd))
         rospy.logdebug("Yaw cmd: {}".format(yaw_cmd))
         rospy.logdebug("Pitch cmd: {}".format(pitch_cmd))
