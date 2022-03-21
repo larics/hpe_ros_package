@@ -29,11 +29,6 @@ class uavController:
         rospy.init_node("uav_controller", log_level=rospy.DEBUG)
         rospy.sleep(nn_init_time_sec)
 
-        self.current_x = 0
-        self.current_y = 0
-        self.current_z = 1
-        self.current_rot = 0
-
         # Available control types are: euler, euler2d 
         self.control_type = "euler2d" 
 
@@ -252,39 +247,6 @@ class uavController:
         self.depth_pcl_msg = PointCloud2()
         self.depth_pcl_msg = msg
 
-    def get_current_depth(self):
-
-        if self.depth_recv and self.depth_pcl_recv:
-
-            # This part of the code lasts 0.25 sec (needs to be speeded up significantly)
-            start_time = rospy.Time.now().to_sec()
-            #### Bottleneck!
-            # 0.1 s
-            depth_list = list(self.pcl_z)
-            #rospy.logdebug("Current duration is: {}".format(rospy.Time.now().to_sec() - start_time))
-            start_time = rospy.Time.now().to_sec()
-            # 0.15 s
-            pcl_z_matrix = numpy.array(depth_list, dtype=numpy.float32)
-            #rospy.logdebug("Array creation duration is: {}".format(rospy.Time.now().to_sec() - start_time))
-            # Reshape in 2D matrix (H x W) / 0.2 sec, too slow
-            pcl_z_matrix = pcl_z_matrix.reshape((480, 640))
-            # Limits app to 4 Hz :S
-
-            return pcl_z_matrix
-
-    def get_averaged_depth(self, depth_matrix, px, py, k): 
-
-        start_px = int(px - k); stop_px = int(px + k); 
-        start_py = int(py - k); stop_py = int(py + k); 
-
-        # Non-mirrored values 
-        depth_filtered = depth_matrix[start_py:stop_py, start_px:stop_px]
-        depth_no_nans = list(depth_filtered[~numpy.isnan(depth_filtered)])
-
-        if len(depth_no_nans) > 0:
-            rospy.logdebug(sum(depth_no_nans)/len(depth_no_nans))
-            return (sum(depth_no_nans)/len(depth_no_nans))
-
     def average_depth_cluster(self, px, py, k, config="WH"): 
 
         indices = []
@@ -294,14 +256,14 @@ class uavController:
         # Paired indices
         for px in range(start_px, stop_px, 1): 
                 for py in range(start_py, stop_py, 1): 
-                    # Column major indexing
+                    # Row major indexing
                     if config == "WH": 
                         indices.append((px, py))
-                    # Row major indexing
+                    # Columnt major indexing
                     if config == "HW":
                         indices.append((py, px))
             
-        # Get depths
+        # Fastest method for fetching specific indices!
         depths = pc2.read_points(self.depth_pcl_msg, ['z'], False, uvs=indices)
         
         try:
@@ -312,16 +274,16 @@ class uavController:
             if len(depth_no_nans) > 0:                
                 
                 avg_depth = sum(depth_no_nans) / len(depth_no_nans)
-
                 rospy.logdebug("{} Average depth is: {}".format(config, avg_depth))
-
                 return avg_depth
 
             else: 
 
                 return None
         
-        except Exception: 
+        except Exception as e:
+            rospy.logwarn("Exception occured: {}".format(str(e))) 
+            
             return None
 
     def define_ctl_zones(self, img_width, img_height, edge_offset, rect_width):
