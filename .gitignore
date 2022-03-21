@@ -1,5 +1,6 @@
 *.pth
 *.bag
+*.pyc
 src/experiments
 src/.idea
 src/models

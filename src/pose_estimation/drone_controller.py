@@ -42,7 +42,6 @@ class uavController:
             
             # 1D control zones
             self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect = self.define_ctl_zones(self.width, self.height, 0.2, 0.05)
-            self.start_joy_ctl = False
 
         # Coupled control --> Yaw/Height on same axis, Roll/Pitch on same axis
         if self.control_type == "euler2d": 
@@ -55,7 +54,6 @@ class uavController:
             rospy.logdebug("Left zone: {}".format(self.l_zone))
 
             self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect = self.define_2d_ctl_zones(self.l_zone, self.r_zone, 25)
-            self.start_joy2d_ctl = False
 
         # Define deadzones
         self.l_deadzone = self.define_deadzones(self.height_rect, self.yaw_rect)
@@ -64,6 +62,8 @@ class uavController:
         self.font = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/include/arial.ttf", 20, encoding="unic")
 
         self.start_position_ctl = False
+        self.start_joy_ctl = False
+        self.start_joy2d_ctl = False
         
         self.rate = rospy.Rate(int(frequency))     
 
@@ -84,6 +84,7 @@ class uavController:
         self.calib_duration = 10
         self.rhand_calib_px, self.rhand_calib_py = [], []
         self.lhand_calib_px, self.lhand_calib_py = [], []
+        self.depth_right_hand = []
         
         # Flags for run method
         self.initialized = True
@@ -590,12 +591,16 @@ class uavController:
                         # Disable calibration during execution  
                         self.control_type = "None"  
                         self.rhand_calib_px.append(rhand_[0]), self.rhand_calib_py.append(rhand_[1])
-                        self.lhand_calib_px.append(lhand_[0]), self.lhand_calib_py.append(lhand_[1])         
+                        self.lhand_calib_px.append(lhand_[0]), self.lhand_calib_py.append(lhand_[1]) 
+                        avg_depth = self.average_depth_cluster(self.rhand[0], rhand_[1], 2, "WH")
+                        if avg_depth: 
+                            self.depth_right_hand.append(avg_depth)        
 
                     
                     else:
                         avg_rhand = (int(sum(self.rhand_calib_px)/len(self.rhand_calib_px)), int(sum(self.rhand_calib_py)/len(self.rhand_calib_py)))
                         avg_lhand = (int(sum(self.lhand_calib_py)/len(self.lhand_calib_px)), int(sum(self.lhand_calib_py)/len(self.lhand_calib_py)))
+                        avg_depth = sum(self.depth_right_hand)/len(self.depth_right_hand)
                         calib_points = (avg_lhand, avg_rhand)
                         self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect =  self.define_calibrated_ctl_zones(calib_points, self.width, self.height)
                         self.l_deadzone = self.define_deadzones(self.height_rect, self.yaw_rect)
@@ -604,15 +609,16 @@ class uavController:
                         self.start_calib = False
 
                         # Calibration
-                        zone_debug = False 
+                        zone_debug = True 
                         if zone_debug:
-                            rospy.loginfo("Calib points are: {}".format(calib_points))
-                            rospy.loginfo("Height rect: {}".format(self.height_rect))
-                            rospy.loginfo("Yaw rect: {}".format(self.yaw_rect))
-                            rospy.loginfo("Pitch rect: {}".format(self.pitch_rect))
-                            rospy.loginfo("Roll rect: {}".format(self.roll_rect))
-                            rospy.loginfo("Right deadzone: {}".format(self.r_deadzone))
-                            rospy.loginfo("Left deadzone: {}".format(self.l_deadzone))
+                            #rospy.loginfo("Calib points are: {}".format(calib_points))
+                            #rospy.loginfo("Height rect: {}".format(self.height_rect))
+                            #rospy.loginfo("Yaw rect: {}".format(self.yaw_rect))
+                            #rospy.loginfo("Pitch rect: {}".format(self.pitch_rect))
+                            #rospy.loginfo("Roll rect: {}".format(self.roll_rect))
+                            #rospy.loginfo("Right deadzone: {}".format(self.r_deadzone))
+                            #rospy.loginfo("Left deadzone: {}".format(self.l_deadzone))
+                            rospy.logdebug("Average depth is: {}".format(avg_depth))
 
 
                 if self.control_type == "position": 
@@ -636,17 +642,10 @@ class uavController:
 
                 if self.control_type == "euler2d": 
 
-                    # Currently slow! --> Speed it up!
-                    #pcl_matrix = self.get_current_depth()
-                    #if self.depth_recv:
-                    #    self.get_averaged_depth(pcl_matrix, rhand_[0], rhand_[1], 1)
-
                     if self.depth_recv:
                         # Using self.rhand and rhand_[1] because self.rhand is not mirrored (which makes it okay for depth!)
                         rospy.logdebug("Right hand!") 
                         self.average_depth_cluster(self.rhand[0], rhand_[1], 2, "WH")
-                        rospy.logdebug("Left hand!")
-                        self.average_depth_cluster(self.lhand[0], lhand_[1], 2, "WH")
 
                     if self.in_zone(lhand_, self.l_deadzone) and self.in_zone(rhand_, self.r_deadzone):
                         self.start_joy2d_ctl = True 
