@@ -17,9 +17,13 @@ import sensor_msgs.point_cloud2 as pc2
 from PIL import ImageDraw, ImageOps, ImageFont
 from PIL import Image as PILImage
 
+from img_utils import *
+
 # TODO:
 # - think of behavior when arm goes out of range! --> best to do nothing, just send references when there's signal from HPE 
-# - test depth averaging 
+# - add calibration method
+# - decouple depth and zone calibration 
+# - test 2D zones
 
 class uavController:
 
@@ -42,7 +46,6 @@ class uavController:
             
             # 1D control zones
             self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect = self.define_ctl_zones(self.width, self.height, 0.2, 0.05)
-            self.start_joy_ctl = False
 
         # Coupled control --> Yaw/Height on same axis, Roll/Pitch on same axis
         if self.control_type == "euler2d": 
@@ -55,7 +58,6 @@ class uavController:
             rospy.logdebug("Left zone: {}".format(self.l_zone))
 
             self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect = self.define_2d_ctl_zones(self.l_zone, self.r_zone, 25)
-            self.start_joy2d_ctl = False
 
         # Define deadzones
         self.l_deadzone = self.define_deadzones(self.height_rect, self.yaw_rect)
@@ -64,6 +66,8 @@ class uavController:
         self.font = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/include/arial.ttf", 20, encoding="unic")
 
         self.start_position_ctl = False
+        self.start_joy_ctl = False
+        self.start_joy2d_ctl = False
         
         self.rate = rospy.Rate(int(frequency))     
 
@@ -84,6 +88,7 @@ class uavController:
         self.calib_duration = 10
         self.rhand_calib_px, self.rhand_calib_py = [], []
         self.lhand_calib_px, self.lhand_calib_py = [], []
+        self.calib_depth = []
         
         # Flags for run method
         self.initialized = True
@@ -195,41 +200,14 @@ class uavController:
         
         # Rect for roll 
         draw.rectangle(self.roll_rect, fill=(178,34,34, 100), width=2)
-       
-        # Text for changing UAV height and yaw
-        offset_x = 2; offset_y = 2; 
-        # Text writing --> Think how to define this
-        ###########################################################################################################################################
-        #up_size = uavController.get_text_dimensions("UP", self.font); down_size = uavController.get_text_dimensions("DOWN", self.font)
-        #yp_size = uavController.get_text_dimensions("Y+", self.font); ym_size = uavController.get_text_dimensions("Y-", self.font)
-        #draw.text(((self.rotation_area[0] + self.rotation_area[1])/2 - up_size[0]/2, self.height_area[0]- up_size[1] ), "UP", font=self.font, fill="black")
-        #draw.text(((self.rotation_area[0] + self.rotation_area[1])/2 - down_size[0]/2, self.height_area[1]), "DOWN", font=self.font, fill="black")
-        
-        ############################################################################################################################################
-        #draw.text(((self.rotation_area[0] - ym_size[0], (self.height_area[0] + self.height_area[1])/2 - ym_size[1]/2)), "Y-", font=self.font)
-        #draw.text(((self.rotation_area[1], (self.height_area[0] + self.height_area[1])/2 - yp_size[1]/2)), "Y+", font=self.font)
-
-        ######################################################################################################################################
-        
-        # Text for moving UAV forward and backward 
-        #fwd_size = uavController.get_text_dimensions("FWD", self.font); bwd_size = uavController.get_text_dimensions("BWD", self.font)
-        #l_size = uavController.get_text_dimensions("L", self.font); r_size = uavController.get_text_dimensions("R", self.font)
-        #draw.text(((self.x_area[0] + self.x_area[1])/2 - r_size[0]/2, self.y_area[0] - r_size[1]), "L", font=self.font, fill="black")
-        #draw.text(((self.x_area[0] + self.x_area[1])/2 - l_size[0]/2, self.y_area[1]), "R", font=self.font, fill="black")
-        #draw.text(((self.x_area[0] - bwd_size[0], (self.y_area[0] + self.y_area[1])/2 - bwd_size[1]/2)), "BWD", font=self.font, fill="black")
-        #draw.text(((self.x_area[1], (self.y_area[0] + self.y_area[1])/2 - fwd_size[1]/2)), "FWD", font=self.font, fill="black")
-        ########################################################################################################################################
-
-        # Check what this mirroring does here! --> mirroring is neccessary to see ourselves when operating 
-        #rospy.loginfo("Publishing stickman with zones!")
 
         if self.hmi_compression: 
             rospy.loginfo("Compressing zones")
-            compressed_msg = uavController.convert_pil_to_ros_compressed(img, color_conversion="True")
+            compressed_msg = convert_pil_to_ros_compressed(img, color_conversion="True")
             self.stickman_compressed_area_pub.publish(compressed_msg)            
 
         else:             
-            ros_msg = uavController.convert_pil_to_ros_img(img) 
+            ros_msg = convert_pil_to_ros_img(img) 
             self.stickman_area_pub.publish(ros_msg)
 
         duration = rospy.Time().now().to_sec() - start_time
@@ -509,7 +487,6 @@ class uavController:
         rospy.logdebug("Roll: {}".format(roll_rect))
         rospy.logdebug("Yaw: {}".format(yaw_rect))
 
-
         return height_rect, yaw_rect, pitch_rect, roll_rect
 
     def in_ctl2d_zone(self, point, rect, deadzone): 
@@ -527,7 +504,6 @@ class uavController:
         if self.in_zone(point, rect): 
             
             rospy.logdebug("x: {}".format(x))
-
             rospy.logdebug("y: {}".format(y))
 
             if abs(cx - x) > deadzone: 
@@ -546,7 +522,7 @@ class uavController:
 
         return norm_x_diff, norm_y_diff
 
-    def run_joy2d_ctl(self, lhand, rhand): 
+    def run_joy2d_ctl(self, lhand, rhand, curr_depth): 
 
         yaw_cmd, height_cmd = self.in_ctl2d_zone(lhand, self.l_zone, 25)
         pitch_cmd, roll_cmd = self.in_ctl2d_zone(rhand, self.r_zone, 25)
@@ -568,7 +544,60 @@ class uavController:
 
         # Publish composed joy msg
         self.joy_pub.publish(joy_msg)
-         
+
+    def run_joy2d_dpth_ctl(self, lhand, rhand, curr_depth, avg_depth): 
+
+        yaw_cmd, height_cmd = self.in_ctl2d_zone(lhand, self.l_zone, 25)
+        pitch_cmd, roll_cmd = self.in_ctl2d_zone(rhand, self.r_zone, 25)
+
+        # Depth cmd
+        pitch_cmd = curr_depth - avg_depth 
+
+        reverse_dir = -1
+        # Added reverse because rc joystick implementation has reverse
+        reverse = True 
+        if reverse: 
+            roll_cmd  *= reverse_dir
+
+        # Test!
+        debug_joy = True
+        if debug_joy:
+            rospy.logdebug("Height cmd: {}".format(height_cmd))
+            rospy.logdebug("Yaw cmd: {}".format(yaw_cmd))
+            rospy.logdebug("Pitch cmd: {}".format(pitch_cmd))
+            rospy.logdebug("Roll cmd: {}".format(roll_cmd))
+
+        # Compose from commands joy msg
+        joy_msg = self.compose_joy_msg(pitch_cmd, roll_cmd, yaw_cmd, height_cmd)
+
+        # Publish composed joy msg
+        self.joy_pub.publish(joy_msg)
+
+    def zones_calibration(self, right, left, done):
+        
+        if not done: 
+            self.rhand_calib_px.append(right[0]), self.rhand_calib_py.append(right[1])
+            self.lhand_calib_px.append(left[0]), self.lhand_calib_py.append(left[1])
+        
+        else: 
+
+            avg_rhand = (int(sum(self.rhand_calib_px)/len(self.rhand_calib_px)), int(sum(self.rhand_calib_py)/len(self.rhand_calib_py)))
+            avg_lhand = (int(sum(self.lhand_calib_py)/len(self.lhand_calib_px)), int(sum(self.lhand_calib_py)/len(self.lhand_calib_py)))
+
+            return avg_rhand, avg_lhand
+    
+    def depth_calibration(self, px, py, done=False):
+
+        if not done:
+            depth = self.average_depth_cluster(px, py, 2, "WH")
+            if depth: 
+                self.calib_depth.append(depth)
+        else: 
+
+            avg_depth  = sum(self.calib_depth) / len(self.calib_depth)
+            return avg_depth
+
+             
     def run(self): 
         #rospy.spin()
 
@@ -582,49 +611,31 @@ class uavController:
                 lhand_ = (abs(self.lhand[0] - self.width), self.lhand[1])
                 rhand_ = (abs(self.rhand[0] - self.width), self.rhand[1])
 
+                # ===================== Calibration ======================
                 if self.start_calib:
-
-                    # Added dummy sleep to test calibration
+                    
                     duration = rospy.Time.now().to_sec() - self.start_calib_time
                     if duration < self.calib_duration:
-                        # Disable calibration during execution  
+                        # Disable control during execution  
                         self.control_type = "None"  
-                        self.rhand_calib_px.append(rhand_[0]), self.rhand_calib_py.append(rhand_[1])
-                        self.lhand_calib_px.append(lhand_[0]), self.lhand_calib_py.append(lhand_[1])         
-
+                        self.zones_calibration(rhand_, lhand_, done=False)
+                        self.depth_calibration(self.rhand[0], self.rhand[1], done=False)
                     
-                    else:
-                        avg_rhand = (int(sum(self.rhand_calib_px)/len(self.rhand_calib_px)), int(sum(self.rhand_calib_py)/len(self.rhand_calib_py)))
-                        avg_lhand = (int(sum(self.lhand_calib_py)/len(self.lhand_calib_px)), int(sum(self.lhand_calib_py)/len(self.lhand_calib_py)))
-                        calib_points = (avg_lhand, avg_rhand)
+                    else:                        
+                        calib_points = self.zones_calibration(rhand_, lhand_, done=True)
+                        avg_depth = self.depth_calibration(self.rhand[0], self.rhand[1], done=True)
                         self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect =  self.define_calibrated_ctl_zones(calib_points, self.width, self.height)
                         self.l_deadzone = self.define_deadzones(self.height_rect, self.yaw_rect)
                         self.r_deadzone = self.define_deadzones(self.pitch_rect, self.roll_rect)
-                        self.control_type = "euler"
+                        self.control_type = "euler2d" # "euler"
                         self.start_calib = False
 
-                        # Calibration
-                        zone_debug = False 
-                        if zone_debug:
-                            rospy.loginfo("Calib points are: {}".format(calib_points))
-                            rospy.loginfo("Height rect: {}".format(self.height_rect))
-                            rospy.loginfo("Yaw rect: {}".format(self.yaw_rect))
-                            rospy.loginfo("Pitch rect: {}".format(self.pitch_rect))
-                            rospy.loginfo("Roll rect: {}".format(self.roll_rect))
-                            rospy.loginfo("Right deadzone: {}".format(self.r_deadzone))
-                            rospy.loginfo("Left deadzone: {}".format(self.l_deadzone))
-
-
+                # ====================== Execution ========================
                 if self.control_type == "position": 
 
                     self.run_position_ctl(lhand_, rhand_)
 
-                if self.control_type == "euler": 
-
-                    rospy.loginfo("rhand_: {}".format(rhand_))
-                    rospy.loginfo("lhand_: {}".format(lhand_))
-                    rospy.loginfo("r_deadzone: {}".format(self.r_deadzone))
-                    rospy.loginfo("l_deadzone: {}".format(self.l_deadzone))                    
+                if self.control_type == "euler":                
 
                     if self.in_zone(lhand_, self.l_deadzone) and self.in_zone(rhand_, self.r_deadzone):
                         self.start_joy_ctl = True 
@@ -636,17 +647,9 @@ class uavController:
 
                 if self.control_type == "euler2d": 
 
-                    # Currently slow! --> Speed it up!
-                    #pcl_matrix = self.get_current_depth()
-                    #if self.depth_recv:
-                    #    self.get_averaged_depth(pcl_matrix, rhand_[0], rhand_[1], 1)
-
                     if self.depth_recv:
                         # Using self.rhand and rhand_[1] because self.rhand is not mirrored (which makes it okay for depth!)
-                        rospy.logdebug("Right hand!") 
-                        self.average_depth_cluster(self.rhand[0], rhand_[1], 2, "WH")
-                        rospy.logdebug("Left hand!")
-                        self.average_depth_cluster(self.lhand[0], lhand_[1], 2, "WH")
+                        current_depth = self.average_depth_cluster(self.rhand[0], rhand_[1], 2, "WH")
 
                     if self.in_zone(lhand_, self.l_deadzone) and self.in_zone(rhand_, self.r_deadzone):
                         self.start_joy2d_ctl = True 
@@ -654,58 +657,24 @@ class uavController:
                         rospy.loginfo("Not in deadzones!")        
                     
                     if self.start_joy2d_ctl: 
-                        self.run_joy2d_ctl(lhand_, rhand_)
+                        # Normal joy2d
+                        # self.run_joy2d_ctl(lhand_, rhand_)
+                        # Depth joy2d
+                        rospy.loginfo("Current depth is: {}".format(current_depth))
+                        n_depth = 4
+                        # Depth averaging --> move to another method
+                        if current_depth:
+                            self.calib_depth.append(current_depth)
+                            current_depth = sum(self.calib_depth[-n_depth:])/len(self.calib_depth[-n_depth:])                            
+                        else: 
+                            current_depth = sum(self.calib_depth[-n_depth:])/len(self.calib_depth[-n_depth:])
+
+                        self.run_joy2d_dpth_ctl(lhand_, rhand_, current_depth, avg_depth)
 
                 self.rate.sleep()
 
-    @staticmethod
-    def convert_pil_to_ros_img(img):
-        img = img.convert('RGB')
-        msg = Image()
-        stamp = rospy.Time.now()
-        msg.height = img.height
-        msg.width = img.width
-        msg.encoding = "rgb8"
-        msg.is_bigendian = False
-        msg.step = 3 * img.width
-        msg.data = numpy.array(img).tobytes()
-        return msg
 
-    @staticmethod
-    def convert_pil_to_ros_compressed(img, color_conversion = False, compression_type="jpeg"):
-
-        msg = CompressedImage()
-        msg.header.stamp = rospy.Time.now()       
-        msg.format = "{}".format(compression_type)
-        np_img = numpy.array(img); #bgr 
-
-        if color_conversion: 
-            np_img = uavController.bgr2rgb(np_img)            
-        
-        compressed_img = cv2.imencode(".{}".format(compression_type), np_img)[1]
-        msg.data = compressed_img.tobytes()
-
-        return msg
-
-    @staticmethod
-    def get_text_dimensions(text_string, font):
-
-        ascent, descent = font.getmetrics()
-        text_width = font.getmask(text_string).getbbox()[2]
-        text_height = font.getmask(text_string).getbbox()[3] + descent
-
-        return (text_width, text_height)
     
-    @staticmethod
-    def bgr2rgb(img):
-        
-        rgb_img = numpy.zeros_like(img)
-        rgb_img[:, :, 0] = img[:, :, 2]
-        rgb_img[:, :, 1] = img[:, :, 1]
-        rgb_img[:, :, 2] = img[:, :, 0]
-        
-        return rgb_img
-
 def str2bool(v):
   return v.lower() in ("yes", "true", "t", "1")
         
