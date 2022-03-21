@@ -1,21 +1,25 @@
 #!/opt/conda/bin/python3
+from audioop import avg
+from multiprocessing import reduction
 import queue
 from turtle import width
 import rospy
 import rospkg
 import sys
 import cv2
-import numpy
+import numpy 
 
 from geometry_msgs.msg import Pose, PoseStamped
 from std_msgs.msg import Float64MultiArray, Int32, Bool
-from sensor_msgs.msg import Image, CompressedImage, Joy
+from sensor_msgs.msg import Image, CompressedImage, Joy, PointCloud2
+import sensor_msgs.point_cloud2 as pc2
 
 from PIL import ImageDraw, ImageOps, ImageFont
 from PIL import Image as PILImage
 
 # TODO:
 # - think of behavior when arm goes out of range! --> best to do nothing, just send references when there's signal from HPE 
+# - test depth averaging 
 
 class uavController:
 
@@ -24,11 +28,6 @@ class uavController:
         nn_init_time_sec = 10
         rospy.init_node("uav_controller", log_level=rospy.DEBUG)
         rospy.sleep(nn_init_time_sec)
-
-        self.current_x = 0
-        self.current_y = 0
-        self.current_z = 1
-        self.current_rot = 0
 
         # Available control types are: euler, euler2d 
         self.control_type = "euler2d" 
@@ -70,13 +69,16 @@ class uavController:
 
         # Debugging arguments
         self.inspect_keypoints = False
-        self.recv_pose_meas = False
-        
+        self.recv_pose_meas = False        
+
         # Image compression for human-machine interface
         self.hmi_compression = False
-
         # If calibration determine zone-centers
         self.start_calib = False
+        # If use depth
+        self.use_depth = True
+        self.depth_recv = False
+        self.depth_pcl_recv = False
 
         # Initialize start calib time to very large value to start calibration when i publish to topic
         self.calib_duration = 10
@@ -112,6 +114,8 @@ class uavController:
         self.stickman_sub       = rospy.Subscriber("stickman", Image, self.draw_zones_cb, queue_size=1)
         self.current_pose_sub   = rospy.Subscriber("uav/pose", PoseStamped, self.curr_pose_cb, queue_size=1)
         self.start_calib_sub    = rospy.Subscriber("start_calibration", Bool, self.calib_cb, queue_size=1)
+        self.depth_sub          = rospy.Subscriber("camera/depth/image", Image, self.depth_cb, queue_size=1)
+        self.depth_pcl_sub      = rospy.Subscriber("camera/depth/points", PointCloud2, self.depth_pcl_cb, queue_size=1)
            
     def publish_predicted_keypoints(self, rhand, lhand): 
 
@@ -230,6 +234,57 @@ class uavController:
 
         duration = rospy.Time().now().to_sec() - start_time
         #rospy.loginfo("stickman_cb duration is: {}".format(duration))
+    def depth_cb(self, msg): 
+        
+        self.depth_recv = True
+        #self.depth_msg = numpy.frombuffer(msg.data, dtype=numpy.uint8).reshape(self.width, self.height, 4)
+
+    def depth_pcl_cb(self, msg): 
+
+        #https://answers.ros.org/question/191265/pointcloud2-access-data/
+
+        self.depth_pcl_recv = True
+        self.depth_pcl_msg = PointCloud2()
+        self.depth_pcl_msg = msg
+
+    def average_depth_cluster(self, px, py, k, config="WH"): 
+
+        indices = []
+        start_px = int(px - k); stop_px = int(px + k); 
+        start_py = int(py - k); stop_py = int(py + k); 
+
+        # Paired indices
+        for px in range(start_px, stop_px, 1): 
+                for py in range(start_py, stop_py, 1): 
+                    # Row major indexing
+                    if config == "WH": 
+                        indices.append((px, py))
+                    # Columnt major indexing
+                    if config == "HW":
+                        indices.append((py, px))
+            
+        # Fastest method for fetching specific indices!
+        depths = pc2.read_points(self.depth_pcl_msg, ['z'], False, uvs=indices)
+        
+        try:
+
+            depths = numpy.array(list(depths), dtype=numpy.float32)
+            depth_no_nans = list(depths[~numpy.isnan(depths)])
+
+            if len(depth_no_nans) > 0:                
+                
+                avg_depth = sum(depth_no_nans) / len(depth_no_nans)
+                rospy.logdebug("{} Average depth is: {}".format(config, avg_depth))
+                return avg_depth
+
+            else: 
+
+                return None
+        
+        except Exception as e:
+            rospy.logwarn("Exception occured: {}".format(str(e))) 
+            
+            return None
 
     def define_ctl_zones(self, img_width, img_height, edge_offset, rect_width):
         
@@ -426,8 +481,6 @@ class uavController:
 
         # Publish composed joy msg
         self.joy_pub.publish(joy_msg)
-
-        # Define rect for ctl zone 
     
     # 2D control 
     def define_ctl_zone(self, w, h, cx, cy):
@@ -537,7 +590,8 @@ class uavController:
                         # Disable calibration during execution  
                         self.control_type = "None"  
                         self.rhand_calib_px.append(rhand_[0]), self.rhand_calib_py.append(rhand_[1])
-                        self.lhand_calib_px.append(lhand_[0]), self.lhand_calib_py.append(lhand_[1])
+                        self.lhand_calib_px.append(lhand_[0]), self.lhand_calib_py.append(lhand_[1])         
+
                     
                     else:
                         avg_rhand = (int(sum(self.rhand_calib_px)/len(self.rhand_calib_px)), int(sum(self.rhand_calib_py)/len(self.rhand_calib_py)))
@@ -570,7 +624,7 @@ class uavController:
                     rospy.loginfo("rhand_: {}".format(rhand_))
                     rospy.loginfo("lhand_: {}".format(lhand_))
                     rospy.loginfo("r_deadzone: {}".format(self.r_deadzone))
-                    rospy.loginfo("l_deadzone: {}".format(self.l_deadzone))
+                    rospy.loginfo("l_deadzone: {}".format(self.l_deadzone))                    
 
                     if self.in_zone(lhand_, self.l_deadzone) and self.in_zone(rhand_, self.r_deadzone):
                         self.start_joy_ctl = True 
@@ -581,7 +635,19 @@ class uavController:
                         self.run_joy_ctl(lhand_, rhand_)
 
                 if self.control_type == "euler2d": 
-                    
+
+                    # Currently slow! --> Speed it up!
+                    #pcl_matrix = self.get_current_depth()
+                    #if self.depth_recv:
+                    #    self.get_averaged_depth(pcl_matrix, rhand_[0], rhand_[1], 1)
+
+                    if self.depth_recv:
+                        # Using self.rhand and rhand_[1] because self.rhand is not mirrored (which makes it okay for depth!)
+                        rospy.logdebug("Right hand!") 
+                        self.average_depth_cluster(self.rhand[0], rhand_[1], 2, "WH")
+                        rospy.logdebug("Left hand!")
+                        self.average_depth_cluster(self.lhand[0], lhand_[1], 2, "WH")
+
                     if self.in_zone(lhand_, self.l_deadzone) and self.in_zone(rhand_, self.r_deadzone):
                         self.start_joy2d_ctl = True 
                     else:

@@ -3,6 +3,7 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+import queue
 
 import numpy
 from numpy.core.fromnumeric import compress
@@ -47,7 +48,6 @@ class HumanPoseEstimationROS():
 
     def __init__(self, frequency, args):
 
-
         rospy.init_node("hpe_simplebaselines")
         
         self.rate = rospy.Rate(int(frequency))
@@ -73,7 +73,9 @@ class HumanPoseEstimationROS():
         rospy.loginfo("[HPE-SimpleBaselines] Loaded model...")
         self.model_ready = True
 
-
+        # If use depth (use Xtion camera)
+        self.use_depth = True
+        
         # Initialize subscribers/publishers
         self._init_publishers()
         self._init_subscribers()
@@ -94,8 +96,16 @@ class HumanPoseEstimationROS():
         # If HMI integration (use compressed image)
         self.compressed_stickman = False
 
+
     def _init_subscribers(self):
-        self.camera_sub = rospy.Subscriber("usb_camera/image_raw", Image, self.image_cb, queue_size=1)
+        
+        if self.use_depth:
+            # Xtion Cam
+            self.camera_sub = rospy.Subscriber("camera/rgb/image_raw", Image, self.image_cb, queue_size=1)
+        else:
+            # USB Cam
+            self.camera_sub = rospy.Subscriber("usb_camera/image_raw", Image, self.image_cb, queue_size=1)
+            
         #self.darknet_sub = rospy.Subscriber("/darknet_ros/bounding_boxes", BoundingBoxes, self.darknet_cb, queue_size=1)
 
     def _init_publishers(self):
@@ -392,10 +402,12 @@ class HumanPoseEstimationROS():
             if i in ctl_indices:
 
                 if i == 10 or i == 15: 
-                    fill_ = "green"
+                    fill_ = (0, 255, 0)
+                    point_r = 6
 
             else:
                 fill_ = (153, 255, 255)
+                point_r = 4
             draw.ellipse([(predictions[i][0] - point_r, predictions[i][1] - point_r), (predictions[i][0] + point_r, predictions[i][1] + point_r)], fill=fill_, width=2*point_r)
 
             if i < len(predictions) - 1 and i != 5 and i != 9:      
