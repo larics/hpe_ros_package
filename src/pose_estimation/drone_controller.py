@@ -19,6 +19,7 @@ from PIL import Image as PILImage
 
 # TODO:
 # - think of behavior when arm goes out of range! --> best to do nothing, just send references when there's signal from HPE 
+# - test depth averaging 
 
 class uavController:
 
@@ -73,8 +74,7 @@ class uavController:
 
         # Debugging arguments
         self.inspect_keypoints = False
-        self.recv_pose_meas = False
-        
+        self.recv_pose_meas = False        
 
         # Image compression for human-machine interface
         self.hmi_compression = False
@@ -251,16 +251,6 @@ class uavController:
         self.depth_pcl_recv = True
         self.depth_pcl_msg = PointCloud2()
         self.depth_pcl_msg = msg
-        
-        #start_time = rospy.Time.now().to_sec()
-        #self.pcl_z = pc2.read_points(msg, ["z"])
-        #rospy.logdebug("PCL extractions lasts: {}".format(self.pcl_z))        
-        
-        #start_time = rospy.Time.now().to_sec()
-        #self.index_z = pc2.read_points(msg, ['z'], False, uvs=[(240, 320), (240, 321)])
-        #rospy.logdebug("Z distances: {}".format(self.index_z))
-        #rospy.logdebug("Indexed extraction lasts: {}".format(list(self.index_z)))        
-
 
     def get_current_depth(self):
 
@@ -333,11 +323,6 @@ class uavController:
         
         except Exception: 
             return None
-
-
-    #    px_list = range(start_px, stop_px, 1)
-    #    py_list = range(start_py, stop_py, 1)
-
 
     def define_ctl_zones(self, img_width, img_height, edge_offset, rect_width):
         
@@ -534,8 +519,6 @@ class uavController:
 
         # Publish composed joy msg
         self.joy_pub.publish(joy_msg)
-
-        # Define rect for ctl zone 
     
     # 2D control 
     def define_ctl_zone(self, w, h, cx, cy):
@@ -645,7 +628,8 @@ class uavController:
                         # Disable calibration during execution  
                         self.control_type = "None"  
                         self.rhand_calib_px.append(rhand_[0]), self.rhand_calib_py.append(rhand_[1])
-                        self.lhand_calib_px.append(lhand_[0]), self.lhand_calib_py.append(lhand_[1])
+                        self.lhand_calib_px.append(lhand_[0]), self.lhand_calib_py.append(lhand_[1])         
+
                     
                     else:
                         avg_rhand = (int(sum(self.rhand_calib_px)/len(self.rhand_calib_px)), int(sum(self.rhand_calib_py)/len(self.rhand_calib_py)))
@@ -696,10 +680,11 @@ class uavController:
                     #    self.get_averaged_depth(pcl_matrix, rhand_[0], rhand_[1], 1)
 
                     if self.depth_recv:
-                        rospy.logdebug("Right hand!")
-                        self.average_depth_cluster(rhand_[0], rhand_[1], 2, "WH")
+                        # Using self.rhand and rhand_[1] because self.rhand is not mirrored (which makes it okay for depth!)
+                        rospy.logdebug("Right hand!") 
+                        self.average_depth_cluster(self.rhand[0], rhand_[1], 2, "WH")
                         rospy.logdebug("Left hand!")
-                        self.average_depth_cluster(lhand_[0], lhand_[1], 2, "WH")
+                        self.average_depth_cluster(self.lhand[0], lhand_[1], 2, "WH")
 
                     if self.in_zone(lhand_, self.l_deadzone) and self.in_zone(rhand_, self.r_deadzone):
                         self.start_joy2d_ctl = True 

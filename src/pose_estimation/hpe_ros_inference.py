@@ -402,7 +402,6 @@ class HumanPoseEstimationROS():
             if i in ctl_indices:
 
                 if i == 10 or i == 15: 
-                    fill_ = "green"
                     fill_ = (0, 255, 0)
                     point_r = 6
 
