@@ -4,3 +4,7 @@
 src/experiments
 src/.idea
 src/models
+src/lib/core/__pycache__
+src/lib/dataset/__pycache__
+src/lib/models/__pycache__
+*/__pycache__/
