@@ -4,12 +4,13 @@
     <!-- Determine HPE + UAV ctl responsivness min(1)/max(209)-->
     <arg name="ctl_freq" value="10"/>
     <arg name="use_calibration" default="false"/>
+    <arg name="control_type"    default="euler2d"/>
 
     <!-- Launch usb_cam and HPE -->
     <include file="$(find hpe_ros_package)/launch/webcam_inference.launch"/>
 
     <!-- send position commands using HPE -->
-    <node name="controller_node" pkg="hpe_ros_package" type="drone_controller.py" args="$(arg ctl_freq) $(arg use_calibration)" output="screen"/>
+    <node name="controller_node" pkg="hpe_ros_package" type="drone_controller.py" args="$(arg ctl_freq) $(arg control_type)" output="screen"/>
 
     <!-- add image transport for compression --> 
     <!-- Only republishes! -->

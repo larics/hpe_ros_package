@@ -67,14 +67,13 @@ class HumanPoseEstimationROS():
         self.nn_input_formed = False
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-
         rospy.loginfo("[HPE-SimpleBaselines] Loading model")
         self.model = self._load_model(config)
         rospy.loginfo("[HPE-SimpleBaselines] Loaded model...")
         self.model_ready = True
 
-        # If use depth (use Xtion camera)
-        self.use_depth = True
+        # If use depth (use Xtion camera) 
+        self.use_depth = False
         
         # Initialize subscribers/publishers
         self._init_publishers()
@@ -494,6 +493,10 @@ if __name__ == '__main__':
                         type=str)
     parser.add_argument('--shift-heatmap', 
                         help="shift heatmap", 
+                        default=False, 
+                        type=bool)
+    parser.add_argument('--use-depth', 
+                        help="use_depth", 
                         default=False, 
                         type=bool)
 

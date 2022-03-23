@@ -32,6 +32,8 @@ After that we can run following script:
 roslaunch hpe hmi_integration.launch 
 ```
 
+It's not neccessary to setup ROS_MASTER_URI script anymore because currently stream is being sent using RTSP protocol. 
+
 
 ### Transport Server -> Client 
 
@@ -65,11 +67,9 @@ It's possible to easily implement position control also.
 
 ### TODO High priority: 
 
- - [x] Move to compressed image to minimize latency for AR glasses 
- - [x] Add different zones configuration 
- - [x] Parametrize zones 
- - [x] Major refactoring
- - [ ] Find accuracy metrics for human pose estimation  
+ - [ ] Check launch files / Add depth and control types arguments 
+ - [ ] Add calibration and dynamic control to arguments in launch files
+ - [ ] Finish depth control (pitch/depth control)
  - [ ] Try HRNet --> TBD (not neccesary for now)  
 
 ### TODO Low priority: 
