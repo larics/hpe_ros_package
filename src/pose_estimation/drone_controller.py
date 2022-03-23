@@ -8,6 +8,7 @@ import rospkg
 import sys
 import cv2
 import numpy 
+import copy
 
 from geometry_msgs.msg import Pose, PoseStamped
 from std_msgs.msg import Float64MultiArray, Int32, Float32, Bool
@@ -27,19 +28,26 @@ from img_utils import *
 
 class uavController:
 
-    def __init__(self, frequency, use_calibration):
+    def __init__(self, frequency, control_type):
 
         nn_init_time_sec = 10
         rospy.init_node("uav_controller", log_level=rospy.DEBUG)
         rospy.sleep(nn_init_time_sec)
 
         # Available control types are: euler, euler2d 
-        self.control_type = "euler2d" 
+        if control_type: 
+            self.control_type =  control_type
+        else: 
+            self.control_type = "euler2d"
+        # Copy control type    
+        self.init_control_type = copy.deepcopy(self.control_type)
 
-        self._init_publishers(); self._init_subscribers(); 
+        self._init_publishers();
+        self._init_subscribers(); 
 
-        # Define zones / dependent on input video image 
-        self.height = 480; self.width = 640; 
+        # Define zones / dependent on input video image (Can be extracted from camera_info) 
+        self.height = 480; 
+        self.width = 640; 
 
         # Decoupled control  
         if self.control_type == "euler": 
@@ -51,9 +59,9 @@ class uavController:
         if self.control_type == "euler2d": 
 
             # 2D control zones
-            self.ctl_width = self.width/4; self.ctl_height = self.height/1.5
-            self.r_zone = self.define_ctl_zone( self.width/4, self.height/1.5, 3 * self.width/4, self.height/2)
-            self.l_zone = self.define_ctl_zone( self.width/4, self.height/1.5, self.width/4, self.height/2)
+            self.ctl_width = self.width/3.5; self.ctl_height = self.height/2
+            self.r_zone = self.define_ctl_zone( self.ctl_width, self.ctl_height, 3 * self.width/4, self.height/2)
+            self.l_zone = self.define_ctl_zone( self.ctl_width, self.ctl_height, self.width/4, self.height/2)
 
             rospy.logdebug("Right zone: {}".format(self.r_zone))
             rospy.logdebug("Left zone: {}".format(self.l_zone))
@@ -63,8 +71,6 @@ class uavController:
         # Define deadzones
         self.l_deadzone = self.define_deadzones(self.height_rect, self.yaw_rect)
         self.r_deadzone = self.define_deadzones(self.pitch_rect, self.roll_rect)
-
-        self.font = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/include/arial.ttf", 20, encoding="unic")
 
         self.start_position_ctl = False
         self.start_joy_ctl = False
@@ -142,111 +148,6 @@ class uavController:
         self.lhand_y_pub.publish(int(lhand_y))
         self.rhand_x_pub.publish(int(rhand_x))
         self.rhand_y_pub.publish(int(rhand_y))
-
-    def curr_pose_cb(self, msg):
-        
-        self.recv_pose_meas = True; 
-        self.current_pose = PoseStamped(); 
-        self.current_pose.header = msg.header
-        self.current_pose.pose.position = msg.pose.position
-        self.current_pose.pose.orientation = msg.pose.orientation
-
-    def pred_cb(self, converted_preds):
-        preds = []
-
-        start_time = rospy.Time().now().to_sec()
-        # Why do we use switcher? 
-        switcher = False
-        for pred in converted_preds.data:
-            if switcher is False:            
-                preds.append([pred, 0])
-            if switcher is True:
-                preds[-1][1] = pred
-            switcher = not switcher
-        
-        # Explanation of annotations --> http://human-pose.mpi-inf.mpg.de/#download
-        # Use info about right hand and left hand 
-        self.rhand = preds[10]
-        self.lhand = preds[15]
-        self.rshoulder = preds[12]
-        self.lshoulder = preds[13]
-
-        self.prediction_started = True; 
-
-        if self.inspect_keypoints:  
-            self.publish_predicted_keypoints(self.rhand, self.lhand)
-
-    def calib_cb(self, msg): 
-        
-        self.start_calib = msg.data
-
-        self.start_calib_time = rospy.Time.now().to_sec()
-
-    def draw_zones_cb(self, stickman_img):
-        
-        start_time = rospy.Time().now().to_sec()
-        # Convert ROS Image to PIL
-        img = numpy.frombuffer(stickman_img.data, dtype=numpy.uint8).reshape(stickman_img.height, stickman_img.width, -1)
-        img = PILImage.fromarray(img.astype('uint8'), 'RGB')
-
-        # Mirror image here 
-        img = ImageOps.mirror(img) 
-        
-        # Draw rectangles which represent areas for control
-        draw = ImageDraw.Draw(img, "RGBA")
-
-        if self.control_type == "euler2d": 
-
-            draw.rectangle(self.l_zone, width = 3)
-            draw.rectangle(self.r_zone, width = 3)
-        
-        # Rect for yaw
-        draw.rectangle(self.yaw_rect, fill=(178,34,34, 100), width=2)       
-
-        # Rect for height
-        draw.rectangle(self.height_rect, fill=(178,34,34, 100), width=2)
-
-        # Rectangles for pitch
-        # Pitch rect not neccessary when controlling depth
-        draw.rectangle(self.pitch_rect, fill=(178,34,34, 100), width=2)
-        
-        # Rect for roll 
-        draw.rectangle(self.roll_rect, fill=(178,34,34, 100), width=2)
-
-        if self.hmi_compression: 
-            rospy.loginfo("Compressing zones")
-            compressed_msg = convert_pil_to_ros_compressed(img, color_conversion="True")
-            self.stickman_compressed_area_pub.publish(compressed_msg)            
-
-        else:             
-            ros_msg = convert_pil_to_ros_img(img) 
-            self.stickman_area_pub.publish(ros_msg)
-
-        #if self.depth_recv: 
-        #    
-            # Test visual feedback
-        #    d = self.relative_dist * 10
-        #    pt1 = (self.rhand[0] - numpy.ceil(d), self.rhand[1] - numpy.ceil(d))
-        #    pt2 = (self.rhand[0] + numpy.ceil(d), self.rhand[1] + numpy.ceil(d))
-        #    rospy.logdebug("Current point: ({}, {})".format(pt1, pt2))
-        #    draw.ellipse([pt1, pt2], fill=(0, 255, 0))
-
-        #rospy.loginfo("stickman_cb duration is: {}".format(duration))
-        
-        duration = rospy.Time().now().to_sec() - start_time
-
-    def depth_cb(self, msg): 
-        
-        #self.depth_msg = numpy.frombuffer(msg.data, dtype=numpy.uint8).reshape(self.width, self.height, 4)
-        self.depth_recv = True
-
-    def depth_pcl_cb(self, msg): 
-
-        #https://answers.ros.org/question/191265/pointcloud2-access-data/
-
-        self.depth_pcl_recv = True
-        self.depth_pcl_msg = PointCloud2()
-        self.depth_pcl_msg = msg
 
     def average_depth_cluster(self, px, py, k, config="WH"): 
 
@@ -558,16 +459,18 @@ class uavController:
 
         return norm_x_diff, norm_y_diff
 
-    def run_joy2d_ctl(self, lhand, rhand, curr_depth): 
+    def run_joy2d_ctl(self, lhand, rhand): 
 
         yaw_cmd, height_cmd = self.in_ctl2d_zone(lhand, self.l_zone, 25)
-        pitch_cmd, roll_cmd = self.in_ctl2d_zone(rhand, self.r_zone, 25)
+        roll_cmd, pitch_cmd = self.in_ctl2d_zone(rhand, self.r_zone, 25)
 
         reverse_dir = -1
         # Added reverse because rc joystick implementation has reverse
         reverse = True 
         if reverse: 
-            roll_cmd  *= reverse_dir
+            height_cmd *= reverse_dir
+            yaw_cmd *= reverse_dir
+            pitch_cmd *= reverse_dir
 
         # Test!
         rospy.logdebug("Height cmd: {}".format(height_cmd))
@@ -667,7 +570,7 @@ class uavController:
             #avg_depth  = sum(self.calib_depth) / len(self.calib_depth)
             
             # Return collected data
-            return self.calib_deph
+            return self.calib_depth
 
     def create_float32_msg(self, value):
 
@@ -681,7 +584,6 @@ class uavController:
         return msg
 
     def run(self): 
-        #rospy.spin()
 
         while not rospy.is_shutdown():
             if not self.initialized or not self.prediction_started: 
@@ -712,10 +614,10 @@ class uavController:
                         self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect =  self.define_calibrated_ctl_zones(calib_points, self.width, self.height)
                         self.l_deadzone = self.define_deadzones(self.height_rect, self.yaw_rect)
                         self.r_deadzone = self.define_deadzones(self.pitch_rect, self.roll_rect)
-                        self.control_type = "euler2d" # "euler"
+                        self.control_type = self.init_control_type 
                         self.start_calib = False
 
-                # Move zones based on current shoulder position
+                # Move zones based on current shoulder
                 dynamic = False
                 if dynamic:                         
                     calib_points = self.average_zone_points(rshoulder_, lshoulder_, 10)
@@ -723,8 +625,7 @@ class uavController:
                     self.l_zone = self.define_ctl_zone(self.ctl_width, self.ctl_height, calib_points[1][0], calib_points[1][1])
                     self.height_rect, self.yaw_rect, self.pitch_rect, self.roll_rect =  self.define_calibrated_ctl_zones(calib_points, self.width, self.height)
                     self.l_deadzone = self.define_deadzones(self.height_rect, self.yaw_rect)
-                    self.r_deadzone = self.define_deadzones(self.pitch_rect, self.roll_rect)
-                    
+                    self.r_deadzone = self.define_deadzones(self.pitch_rect, self.roll_rect)                    
                     rospy.logdebug("l_deadzone: {}".format(self.l_deadzone))
                     rospy.logdebug("r_deadzone: {}".format(self.r_deadzone))
 
@@ -744,7 +645,8 @@ class uavController:
                         self.run_joy_ctl(lhand_, rhand_)
 
                 if self.control_type == "euler2d":                    
-
+                    
+                    # Use depth information (decouple it!)
                     if self.depth_recv:
                         # Using self.rhand and rhand_[1] because self.rhand is not mirrored (which makes it okay for depth!)
                         current_wrist_depth = self.average_depth_cluster(self.rhand[0], rhand_[1], 2, "WH")
@@ -764,9 +666,8 @@ class uavController:
 
                             rospy.logdebug("Current relative distance is: {}".format(dist))
                         except Exception as e:
-                            rospy.logwarn("Exception is: {}".format(str(e)))                      
+                            rospy.logwarn("Exception is: {}".format(str(e)))                     
                         
-
                     if self.in_zone(lhand_, self.l_deadzone) and self.in_zone(rhand_, self.r_deadzone):
                         self.start_joy2d_ctl = True 
                     else:
@@ -786,9 +687,115 @@ class uavController:
                         #else: 
                         #    current_depth = sum(self.calib_depth[-n_depth:])/len(self.calib_depth[-n_depth:])
 
-                        self.run_joy2d_dpth_ctl(lhand_, rhand_, dist)
+                        self.run_joy2d_ctl(lhand_, rhand_)
 
                 self.rate.sleep()
+
+
+    def curr_pose_cb(self, msg):
+        
+        self.recv_pose_meas = True; 
+        self.current_pose = PoseStamped(); 
+        self.current_pose.header = msg.header
+        self.current_pose.pose.position = msg.pose.position
+        self.current_pose.pose.orientation = msg.pose.orientation
+
+    def pred_cb(self, converted_preds):
+        preds = []
+
+        start_time = rospy.Time().now().to_sec()
+        # Why do we use switcher? 
+        switcher = False
+        for pred in converted_preds.data:
+            if switcher is False:            
+                preds.append([pred, 0])
+            if switcher is True:
+                preds[-1][1] = pred
+            switcher = not switcher
+        
+        # Explanation of annotations --> http://human-pose.mpi-inf.mpg.de/#download
+        # Use info about right hand and left hand 
+        self.rhand = preds[10]
+        self.lhand = preds[15]
+        self.rshoulder = preds[12]
+        self.lshoulder = preds[13]
+
+        self.prediction_started = True; 
+
+        if self.inspect_keypoints:  
+            self.publish_predicted_keypoints(self.rhand, self.lhand)
+
+    def calib_cb(self, msg): 
+        
+        self.start_calib = msg.data
+
+        self.start_calib_time = rospy.Time.now().to_sec()
+
+    def draw_zones_cb(self, stickman_img):
+        
+        start_time = rospy.Time().now().to_sec()
+        # Convert ROS Image to PIL
+        img = numpy.frombuffer(stickman_img.data, dtype=numpy.uint8).reshape(stickman_img.height, stickman_img.width, -1)
+        img = PILImage.fromarray(img.astype('uint8'), 'RGB')
+
+        # Mirror image here 
+        img = ImageOps.mirror(img) 
+        
+        # Draw rectangles which represent areas for control
+        draw = ImageDraw.Draw(img, "RGBA")
+
+        if self.control_type == "euler2d": 
+
+            draw.rectangle(self.l_zone, width = 3)
+            draw.rectangle(self.r_zone, width = 3)
+        
+        # Rect for yaw
+        draw.rectangle(self.yaw_rect, fill=(178,34,34, 100), width=2)       
+
+        # Rect for height
+        draw.rectangle(self.height_rect, fill=(178,34,34, 100), width=2)
+
+        # Rectangles for pitch
+        # Pitch rect not neccessary when controlling depth
+        draw.rectangle(self.pitch_rect, fill=(178,34,34, 100), width=2)
+        
+        # Rect for roll 
+        draw.rectangle(self.roll_rect, fill=(178,34,34, 100), width=2)
+
+        if self.hmi_compression: 
+            rospy.loginfo("Compressing zones")
+            compressed_msg = convert_pil_to_ros_compressed(img, color_conversion="True")
+            self.stickman_compressed_area_pub.publish(compressed_msg)            
+
+        else:             
+            ros_msg = convert_pil_to_ros_img(img) 
+            self.stickman_area_pub.publish(ros_msg)
+
+        #if self.depth_recv: 
+        #    
+            # Test visual feedback
+        #    d = self.relative_dist * 10
+        #    pt1 = (self.rhand[0] - numpy.ceil(d), self.rhand[1] - numpy.ceil(d))
+        #    pt2 = (self.rhand[0] + numpy.ceil(d), self.rhand[1] + numpy.ceil(d))
+        #    rospy.logdebug("Current point: ({}, {})".format(pt1, pt2))
+        #    draw.ellipse([pt1, pt2], fill=(0, 255, 0))
+
+        #rospy.loginfo("stickman_cb duration is: {}".format(duration))
+        
+        duration = rospy.Time().now().to_sec() - start_time
+
+    def depth_cb(self, msg): 
+        
+        #self.depth_msg = numpy.frombuffer(msg.data, dtype=numpy.uint8).reshape(self.width, self.height, 4)
+        self.depth_recv = True
+
+    def depth_pcl_cb(self, msg): 
+
+        #https://answers.ros.org/question/191265/pointcloud2-access-data/
+
+        self.depth_pcl_recv = True
+        self.depth_pcl_msg = PointCloud2()
+        self.depth_pcl_msg = msg
    
 def str2bool(v):
   return v.lower() in ("yes", "true", "t", "1")
