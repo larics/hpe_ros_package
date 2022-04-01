@@ -72,8 +72,9 @@ class HumanPoseEstimationROS():
         rospy.loginfo("[HPE-SimpleBaselines] Loaded model...")
         self.model_ready = True
 
+        print(args)
         # If use depth (use Xtion camera) 
-        self.use_depth = False
+        self.use_depth = args.use_depth
         
         # Initialize subscribers/publishers
         self._init_publishers()
@@ -496,7 +497,7 @@ if __name__ == '__main__':
                         default=False, 
                         type=bool)
     parser.add_argument('--use-depth', 
-                        help="use_depth", 
+                        help="use depth cam", 
                         default=False, 
                         type=bool)
 
