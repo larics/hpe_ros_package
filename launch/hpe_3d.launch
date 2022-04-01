@@ -12,10 +12,10 @@
 <include file="$(find openni2_launch)/launch/openni2.launch"/>
 
 <!-- HPE node -->
-<node name="hpe_simplebaselines_node" pkg="hpe_ros_package" type="hpe_ros_inference.py" args="--frequency $(arg frequency) --cfg $(arg config_file) --model-file $(arg model_path) " output="screen"/>
+<node name="hpe_simplebaselines_node" pkg="hpe_ros_package" type="hpe_ros_inference.py" args="--frequency $(arg frequency) --cfg $(arg config_file) --model-file $(arg model_path) --use-depth $(arg depth_cam)" output="screen"/>
 
 <!-- Depth extraction node -->
-<!--node name="depth_extraction_node" pkg="hpe_ros_package" type="hpe_depth_extraction.py" args="20" output="screen" /-->
+<node name="depth_extraction_node" pkg="hpe_ros_package" type="hpe_depth_extraction.py" args="5" output="screen" />
 
 
 </launch>
