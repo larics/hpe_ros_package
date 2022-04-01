@@ -1,10 +1,9 @@
-#!/opt/conda/bin/python3
+#!/usr/bin/python2
 
-from tracemalloc import start
-from venv import create
+
 import numpy
 import rospy
-import cv2
+import tf
 
 import os
 import sys
@@ -30,7 +29,6 @@ class HumanPose3D():
 
         rospy.init_node("hpe3d")
 
-        print(freq)
         self.rate = rospy.Rate(int(float(freq)))
 
         self.pcl_recv           = False
@@ -41,9 +39,14 @@ class HumanPose3D():
         # Initialize publishers and subscribers
         self._init_subscribers()
         self._init_publishers()
-        
-        # Initialize transform broadcaster
-        #self.br = TransformBroadcaster(self)
+
+        # MPII keypoint indexing
+        self.indexing = {0:"r_ankle", 1:"r_knee", 2:"r_hip", 3:"l_hip", 4: "l_knee", 5: "l_ankle",
+                         6:"pelvis", 7:"thorax", 8:"upper_neck", 9:"head_top", 10:"r_wrist",
+                         11:"r_elbow", 12:"r_shoulder", 13:"l_shoulder", 14:"l_elbow", 15:"l_wrist"}
+
+        # Initialize transform broadcaster                  
+        self.tf_br = tf.TransformBroadcaster()
 
         rospy.loginfo("[Hpe3D] started!")
 
@@ -97,17 +100,33 @@ class HumanPose3D():
             ret["{}".format(i)] = [val for val in generator_depths]
         return ret
 
-    def create_tf_list(self, coords): 
+    def create_keypoint_tfs(self, coords): 
 
         cond = "x" in coords.keys() and "y" in coords.keys() and "z" in coords.keys()        
         assert(cond), "Not enough coordinates returned to create TF"
 
-        kp_tf_list = []
-        for x, y, z in zip(coords["x"], coords["y"], coords["z"]): 
-            nan_cond =  not numpy.isnan(x) and not numpy.isnan(y) and numpy.isnan(z)
-            kp_tf_list.append((x, y, z))
+        kp_tf = {}
+        for i, (x, y, z) in enumerate(zip(coords["x"], coords["y"], coords["z"])): 
+            nan_cond =  not numpy.isnan(x) and not numpy.isnan(y) and not numpy.isnan(z)
 
-        return kp_tf_list
+            if nan_cond: 
+                kp_tf["{}".format(i)] = (x[0], y[0], z[0])  
+
+        return kp_tf
+
+    def send_transforms(self, tfs):
+
+        for index, tf in tfs.items():
+            
+            x,y,z = tf[0], tf[1], tf[2]
+            self.tf_br.sendTransform((x, y, z),
+                                     (0, 0, 0, 1), # Hardcoded orientation for now
+                                     rospy.Time.now(), 
+                                     self.indexing[int(index)], 
+                                     "camera_link"    # Should be camera but there's no transform from world to camera for now
+            )   
+
+
 
     def plot_depths(self, keypoints, depths): 
 
@@ -126,14 +145,16 @@ class HumanPose3D():
             if run_ready: 
                 
                 # Maybe save indices for easier debugging
-                #start_time = rospy.Time.now().to_sec()
+                start_time = rospy.Time.now().to_sec()
                 coords = self.get_coordinates(self.pcl, self.predictions, "xyz")
-                #duration = rospy.Time.now().to_sec() - start_time
-                tf_list = self.create_tf_list.append(coords)
-
-
-
+                tfs = self.create_keypoint_tfs(coords)
+                # Send transforms
+                self.send_transforms(tfs)
                 #self.plot_depths(self.predictions, d)
+
+                duration = rospy.Time.now().to_sec() - start_time
+                rospy.logdebug("Run t: {}".format(duration))
+
 
             self.rate.sleep()
 
