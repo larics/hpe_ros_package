@@ -9,13 +9,15 @@
 <arg name="config_file" value="/home/developer/catkin_ws/src/hpe_ros_package/src/experiments/mpii/resnet152/384x384_d256x3_adam_lr1e-3.yaml"/>
 
 <!-- ASUS Xtion camera -->
-<include file="$(find openni2_launch)/launch/openni2.launch"/>
+<!--include file="$(find openni2_launch)/launch/openni2.launch"/-->
+
+<!-- Realsense CAM is used - docker container -->
 
 <!-- HPE node -->
 <node name="hpe_simplebaselines_node" pkg="hpe_ros_package" type="hpe_ros_inference.py" args="--frequency $(arg frequency) --cfg $(arg config_file) --model-file $(arg model_path) --use-depth $(arg depth_cam)" output="screen"/>
 
 <!-- Depth extraction node -->
-<node name="depth_extraction_node" pkg="hpe_ros_package" type="hpe_depth_extraction.py" args="$(arg frequency)" output="screen" />
+<node name="depth_extraction_node" pkg="hpe_ros_package" type="hpe_3d.py" args="$(arg frequency)" output="screen" />
 
 
 </launch>

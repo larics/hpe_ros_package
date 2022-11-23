@@ -9,7 +9,7 @@ import numpy
 from numpy.core.fromnumeric import compress
 import rospy
 from std_msgs.msg import Float64MultiArray
-from sensor_msgs.msg import Image, CompressedImage
+from sensor_msgs.msg import Image, CompressedImage, CameraInfo
 from data_to_images import draw_point
 from data_to_images import draw_stickman
 import cv2
@@ -48,7 +48,7 @@ class HumanPoseEstimationROS():
 
     def __init__(self, frequency, args):
 
-        rospy.init_node("hpe_simplebaselines")
+        rospy.init_node("hpe_simplebaselines", log_level=rospy.INFO)
         
         self.rate = rospy.Rate(int(frequency))
 
@@ -72,9 +72,8 @@ class HumanPoseEstimationROS():
         rospy.loginfo("[HPE-SimpleBaselines] Loaded model...")
         self.model_ready = True
 
-        print(args)
         # If use depth (use Xtion camera) 
-        self.use_depth = args.use_depth
+        self.use_depth = False #args.use_depth
         
         # Initialize subscribers/publishers
         self._init_publishers()
@@ -91,10 +90,17 @@ class HumanPoseEstimationROS():
         # Initialize font
         self.font = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/include/arial.ttf", 20, encoding="unic")
 
+        # Turn filtering off/on
+        self.filter_predictions_ = False;
+        # Condition guards for filtering 
         self.filtering_active = False; self.filter_first_pass = False
 
         # If HMI integration (use compressed image)
         self.compressed_stickman = False
+
+        # Image width and image height
+        self.img_width = 640
+        self.img_height = 480
 
 
     def _init_subscribers(self):
@@ -104,7 +110,8 @@ class HumanPoseEstimationROS():
             self.camera_sub = rospy.Subscriber("camera/rgb/image_raw", Image, self.image_cb, queue_size=1)
         else:
             # USB Cam
-            self.camera_sub = rospy.Subscriber("usb_camera/image_raw", Image, self.image_cb, queue_size=1)
+            self.camera_sub = rospy.Subscriber("camera/color/image_raw", Image, self.image_cb, queue_size=1)
+            self.camera_info_sub = rospy.Subscriber("camera/color/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
             
         #self.darknet_sub = rospy.Subscriber("/darknet_ros/bounding_boxes", BoundingBoxes, self.darknet_cb, queue_size=1)
 
@@ -137,6 +144,12 @@ class HumanPoseEstimationROS():
         
         return model
 
+    def cinfo_cb(self, msg): 
+
+        # Get valid img width and height
+        self.img_height = msg.height
+        self.img_width = msg.width
+
     def image_cb(self, msg):
 
         start_time = rospy.Time.now().to_sec()
@@ -162,17 +175,12 @@ class HumanPoseEstimationROS():
                                         transforms.ToTensor(),
                                         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                                              std=[0.229, 0.224, 0.225])])
-        #if self.x != None and self.y != None:
-        #    self.cam_img, self.center, self.scale = self.aspect_ratio_scaler(self.org_img, self.x, self.y, self.w, self.h)
-        #else:
-        #    self.cam_img, self.center, self.scale = self.aspect_ratio_scaler(self.org_img, 0, 0, msg.width, msg.height)
 
         self.cam_img = cv2.resize(self.org_img, dsize=(348,348), interpolation=cv2.INTER_CUBIC)
         
         #self.logger.info("Scale is: {}".format(self.scale))
         self.center = 384/2, 384/2
 
-        # https://github.com/microsoft/human-pose-estimation.pytorch/issues/26
         
         # Check this scaling
         self.scale = numpy.array([1, 1], dtype=numpy.float32) 
@@ -237,7 +245,6 @@ class HumanPoseEstimationROS():
 
     def filter_predictions(self, predictions, filter_type="avg", w_size=3): 
 
-
         preds_ = predictions[0]
 
         for i, prediction in enumerate(preds_): 
@@ -259,8 +266,10 @@ class HumanPoseEstimationROS():
 
         return preds_
 
+    # TODO: Add into other filtering scripts
     def filtering(self, p_right, p_left, type="avg", window_size=3):
-
+        
+        # TO STUPID WAY TO FILTER STUFF!
         if self.first_img_reciv and not self.filter_first_pass : 
             self.left_x = []; self.left_y = []; 
             self.right_x = []; self.right_y = [];          
@@ -286,12 +295,12 @@ class HumanPoseEstimationROS():
                     filter_l_x = HumanPoseEstimationROS.median_list(crop_l_x); filter_l_y = self.median_list(crop_l_y)
                     filter_r_x = HumanPoseEstimationROS.median_list(crop_r_x); filter_r_y = self.median_list(crop_r_y)
 
-                buffer = 10
+                buffer = 5
                 if len(self.left_x) > buffer:
                     self.left_x = self.left_x[-buffer:]; self.left_y = self.left_y[-buffer:]
                     self.right_x = self.right_x[-buffer:]; self.right_y = self.right_y[-buffer:]              
 
-        if self.filtering_active:
+        if self.filtering_active and self.first_img_reciv:
 
             return filter_l_x, filter_l_y, filter_r_x, filter_r_y
 
@@ -335,8 +344,8 @@ class HumanPoseEstimationROS():
 
                 # Heatmap size is 88x88, so this scales predictions to image size 
                 for pred in preds[0]:
-                    pred[0] = pred[0]  * (640/88)
-                    pred[1] = pred[1]  * (480/88)
+                    pred[0] = pred[0]  * (self.img_width/88)
+                    pred[1] = pred[1]  * (self.img_height/88)
                 rospy.logdebug(str(preds[0][0][0]) + "   " + str(preds[0][0][1]))
                 
                 rospy.logdebug("Preds are: {}".format(preds))     
@@ -344,7 +353,10 @@ class HumanPoseEstimationROS():
                 # Preds shape is [1, 16, 2] (or num persons is first dim)
                 # rospy.loginfo("Preds shape is: {}".format(preds[0].shape))
                 
-                preds = self.filter_predictions(preds, "avg", 7)
+                if self.filter_predictions_:
+                    preds = self.filter_predictions(preds, "avg", 5)
+                else: 
+                    preds = preds[0]
 
                 # Draw stickman
                 stickman = HumanPoseEstimationROS.draw_stickman(pil_img, preds)
@@ -356,7 +368,6 @@ class HumanPoseEstimationROS():
                 else:
                     stickman_ros_msg = HumanPoseEstimationROS.convert_pil_to_ros_img(stickman)
                     self.image_pub.publish(stickman_ros_msg)
-                    
 
                 # Prepare predictions for publishing - convert to 1D float list
                 converted_preds = []
