@@ -64,6 +64,8 @@ Now we have attitude zone control which sends commands to UAV in joy msg type.
 It's possible to easily implement position control also. 
 
 
+## Rest of the code for acore and epfl experiments can be found [here](https://github.com/fzoric8/hpe_ros_package). 
+
 
 ### TODO High priority: 
 
