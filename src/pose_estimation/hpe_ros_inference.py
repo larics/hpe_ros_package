@@ -10,8 +10,6 @@ from numpy.core.fromnumeric import compress
 import rospy
 from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import Image, CompressedImage, CameraInfo
-from data_to_images import draw_point
-from data_to_images import draw_stickman
 import cv2
 
 import argparse

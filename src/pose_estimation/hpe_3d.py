@@ -82,7 +82,7 @@ class HumanPose3D():
         self.predictions = [(int(keypoints[i]), int(keypoints[i + 1])) for i in range(0, len(keypoints), 2)]
         self.pred_recv = True
 
-        # Cut predictions on upper body only
+        # Cut predictions on upper body only 6+
         self.predictions = self.predictions[6:]
 
     def cinfo_cb(self, msg): 
@@ -169,9 +169,27 @@ class HumanPose3D():
         if not self.pred_recv: 
             rospy.logwarn_throttle(1, "Prediction is not recieved! Check topic names, camera type and model initialization!")
 
-    def publish_wrist_positions(self): 
+    def publish_wrist_positions(self, tfs): 
 
+        left_wrist_msg = Vector3(); right_wrist_msg = Vector3(); 
 
+        rospy.logdebug("Lenghts of tfs: {}".format(len(tfs)))
+        rospy.logdebug("TFs: {}".format(tfs))
+        #rospy.logdebug("Left wrist is: {}".format(left_wrist))
+        #rospy.logdebug("Right wrist is: {}".format(right_wrist))
+
+        right_wrist = tfs["{}".format(str(4))] # 10-6 # NO FOUR? 
+        left_wrist = tfs["{}".format(str(9))]  # 15-6
+
+        left_wrist_msg.x = left_wrist[0]; 
+        left_wrist_msg.y = left_wrist[1]; 
+        left_wrist_msg.z = left_wrist[2]
+        right_wrist_msg.x = right_wrist[0]; 
+        right_wrist_msg.y = right_wrist[1]; 
+        right_wrist_msg.z = right_wrist[2]
+
+        self.left_wrist_pub.publish(left_wrist_msg)
+        self.right_wrist_pub.publish(right_wrist_msg)
 
 
 
@@ -191,7 +209,7 @@ class HumanPose3D():
                 tfs = self.create_keypoint_tfs(coords)
                 # Send transforms
                 self.send_transforms(tfs)
-
+                
                 self.publish_wrist_positions(tfs)
 
                 measure_runtime = False; 
@@ -206,6 +224,7 @@ class HumanPose3D():
             self.rate.sleep()
 
 
+# Create Rotation matrices
 def get_RotX(angle): 
     
     RX = np.array([[1, 0, 0], 
