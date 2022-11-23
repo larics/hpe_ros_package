@@ -13,8 +13,10 @@ from img_utils import convert_pil_to_ros_img
 
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from std_msgs.msg import Float64MultiArray
+from geometry_msgs.msg import Vector3
 
 import sensor_msgs.point_cloud2 as pc2
+
 
 
 # TODO:
@@ -59,7 +61,8 @@ class HumanPose3D():
         self.predictions_sub    = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
 
     def _init_publishers(self): 
-        pass
+        self.left_wrist_pub = rospy.Publisher("leftw_point", Vector3, queue_size=1)
+        self.right_wrist_pub = rospy.Publisher("rightw_point", Vector3, queue_size=1)
 
     def image_cb(self, msg): 
 
@@ -85,10 +88,16 @@ class HumanPose3D():
     def cinfo_cb(self, msg): 
 
         self.cinfo_recv = True
+        # Color
+        # ------
+        # K: [911.5259399414062, 0.0, 642.8853759765625, 0.0, 909.3442993164062, 357.6820068359375, 0.0, 0.0, 1.0]
+        # Depth
+        # ------
+        # P: [886.5087280273438, 0.0, 645.0914306640625, 0.0, 0.0, 886.5087280273438, 358.6357116699219, 0.0, 0.0, 0.0, 1.0, 0.0]
 
     def get_depths(self, pcl, indices, axis="z"):
 
-        # Get current depths from depth cam
+        # Get current depths from depth cam --> TODO: Change read_points with cam_homography
         depths = pc2.read_points(pcl, [axis], False, uvs=indices)
 
         return depths
@@ -113,13 +122,13 @@ class HumanPose3D():
             nan_cond =  not np.isnan(x) and not np.isnan(y) and not np.isnan(z)
 
             if nan_cond: 
-                # Swapped z, y, x to hit correct dimension, and y is in wrong direction
+                # Swapped z, y, x to hit correct dimension
                 p = np.array([z[0], y[0], x[0]])
                 # Needs to be rotated for 90 deg around X axis
                 R = get_RotX(-np.pi/2) 
                 rotP = np.matmul(R, p)
                 print(rotP)
-                
+                # Y is in wrong direction therefore -rotP
                 kp_tf["{}".format(i)] = (rotP[0], -rotP[1], rotP[2])  
 
         return kp_tf
@@ -145,6 +154,10 @@ class HumanPose3D():
         
         pass
 
+    def record_movement(self): 
+
+        pass
+
     def debug_print(self): 
 
         if not self.img_recv:
@@ -155,6 +168,11 @@ class HumanPose3D():
             rospy.logwarn_throttle(1, "Camera info is not recieved! Check camera and topic name.")
         if not self.pred_recv: 
             rospy.logwarn_throttle(1, "Prediction is not recieved! Check topic names, camera type and model initialization!")
+
+    def publish_wrist_positions(self): 
+
+
+
 
 
     def run(self): 
@@ -173,6 +191,8 @@ class HumanPose3D():
                 tfs = self.create_keypoint_tfs(coords)
                 # Send transforms
                 self.send_transforms(tfs)
+
+                self.publish_wrist_positions(tfs)
 
                 measure_runtime = False; 
                 if measure_runtime:
