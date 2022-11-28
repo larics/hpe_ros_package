@@ -6,7 +6,7 @@ set(Torch_DIR "/opt/conda/lib/python3.8/site-packages/torch/share/cmake/Torch/")
 
 
 ## Compile as C++11, supported in ROS Kinetic and newer
-# add_compile_options(-std=c++11)
+add_compile_options(-std=c++11)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   sensor_msgs
+  message_generation
 )
 find_package(Torch REQUIRED)
 find_package(OpenCV REQUIRED)
@@ -23,6 +24,17 @@ find_package(OpenCV REQUIRED)
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 
+
+add_message_files(
+  FILES
+  TorsoJointPositions.msg
+)
+
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+  geometry_msgs
+)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -41,7 +53,7 @@ find_package(OpenCV REQUIRED)
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES hpe
-#  CATKIN_DEPENDS roscpp rospy std_msgs
+  CATKIN_DEPENDS roscpp rospy std_msgs message_runtime 
 #  DEPENDS system_lib
 )
 
@@ -56,6 +68,7 @@ include_directories(
  ${catkin_INCLUDE_DIRS}
  /opt/conda/lib/python3.7
 )
+
 
 ## Declare a C++ library
 # add_library(${PROJECT_NAME}
@@ -97,9 +110,6 @@ include_directories(
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
-   src/pose_estimation/camera_hpe.py
-   src/pose_estimation/data_to_images.py
-   src/pose_estimation/drone_controller.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

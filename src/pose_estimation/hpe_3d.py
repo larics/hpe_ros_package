@@ -14,6 +14,7 @@ from img_utils import convert_pil_to_ros_img
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from std_msgs.msg import Float64MultiArray
 from geometry_msgs.msg import Vector3
+from hpe_ros_package.msg import TorsoJointPositions
 
 import sensor_msgs.point_cloud2 as pc2
 
@@ -23,6 +24,8 @@ import sensor_msgs.point_cloud2 as pc2
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
 # - Read camera_info 
 # - add painting of a z measurements  
+# - Record bag of l shoulder, r shoulder and rest of the body parts 
+# 
 
 class HumanPose3D(): 
 
@@ -51,6 +54,7 @@ class HumanPose3D():
         # Initialize transform broadcaster                  
         self.tf_br = tf.TransformBroadcaster()
 
+        self.torso_pos_3d = TorsoJointPositions()
         rospy.loginfo("[Hpe3D] started!")
 
     def _init_subscribers(self):
@@ -63,6 +67,7 @@ class HumanPose3D():
     def _init_publishers(self): 
         self.left_wrist_pub = rospy.Publisher("leftw_point", Vector3, queue_size=1)
         self.right_wrist_pub = rospy.Publisher("rightw_point", Vector3, queue_size=1)
+        self.upper_body_3d_pub = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
 
     def image_cb(self, msg): 
 
@@ -82,13 +87,13 @@ class HumanPose3D():
         self.predictions = [(int(keypoints[i]), int(keypoints[i + 1])) for i in range(0, len(keypoints), 2)]
         self.pred_recv = True
 
-        # Cut predictions on upper body only 6+
-        self.predictions = self.predictions[6:]
+        # Cut predictions on upper body only 6+ --> don't cut predictions, performance speedup is not noticable
+        # self.predictions = self.predictions[6:]
 
     def cinfo_cb(self, msg): 
 
         self.cinfo_recv = True
-        # Color
+        # Color --> Params for homography
         # ------
         # K: [911.5259399414062, 0.0, 642.8853759765625, 0.0, 909.3442993164062, 357.6820068359375, 0.0, 0.0, 1.0]
         # Depth
@@ -118,33 +123,32 @@ class HumanPose3D():
         assert(cond), "Not enough coordinates returned to create TF"
 
         kp_tf = {}
+        pos_named = {}
         for i, (x, y, z) in enumerate(zip(coords["x"], coords["y"], coords["z"])): 
             nan_cond =  not np.isnan(x) and not np.isnan(y) and not np.isnan(z)
-
             if nan_cond: 
                 # Swapped z, y, x to hit correct dimension
                 p = np.array([z[0], y[0], x[0]])
                 # Needs to be rotated for 90 deg around X axis
                 R = get_RotX(-np.pi/2) 
                 rotP = np.matmul(R, p)
-                print(rotP)
                 # Y is in wrong direction therefore -rotP
                 kp_tf["{}".format(i)] = (rotP[0], -rotP[1], rotP[2])  
+                pos_named["{}".format(self.indexing[i])] = (rotP[0], -rotP[1], rotP[2])
 
-        return kp_tf
+        return kp_tf, pos_named
 
     def send_transforms(self, tfs):
 
         for index, tf in tfs.items():
             
-            index_offset = 6    # Index offset is used to use only upper parts of the body for demonstration purposes
+            index_offset = 0    # Index offset is used to use only upper parts of the body for demonstration purposes
             x,y,z = tf[0], tf[1], tf[2]
             self.tf_br.sendTransform((x, y, z),
                                      (0, 0, 0, 1), # Hardcoded orientation for now
                                      rospy.Time.now(), 
                                      self.indexing[int(index) + index_offset], 
-                                     self.camera_frame_name    # Should be camera but there's no transform from world to camera for now
-            )   
+                                     self.camera_frame_name)    # Should be camera but there's no transform from world to camera for now
 
     def plot_depths(self, keypoints, depths): 
 
@@ -169,29 +173,54 @@ class HumanPose3D():
         if not self.pred_recv: 
             rospy.logwarn_throttle(1, "Prediction is not recieved! Check topic names, camera type and model initialization!")
 
+
+    # TODO: Extract wrist, elbow, shoulder
     def publish_wrist_positions(self, tfs): 
 
         left_wrist_msg = Vector3(); right_wrist_msg = Vector3(); 
 
         rospy.logdebug("Lenghts of tfs: {}".format(len(tfs)))
-        rospy.logdebug("TFs: {}".format(tfs))
         #rospy.logdebug("Left wrist is: {}".format(left_wrist))
         #rospy.logdebug("Right wrist is: {}".format(right_wrist))
+        try: 
+            right_wrist = tfs["{}".format(str(3))] # 10-6 # NO FOUR? 
+            right_wrist_msg.x = right_wrist[0]; 
+            right_wrist_msg.y = right_wrist[1]; 
+            right_wrist_msg.z = right_wrist[2]
+            self.right_wrist_pub.publish(right_wrist_msg)
+        except Exception as e: 
+            rospy.logwarn("Exception: {}".format(str(e)))
 
-        right_wrist = tfs["{}".format(str(4))] # 10-6 # NO FOUR? 
-        left_wrist = tfs["{}".format(str(9))]  # 15-6
+        try: 
+            left_wrist = tfs["{}".format(str(9))]  # 15-6
+            left_wrist_msg.x = left_wrist[0]; 
+            left_wrist_msg.y = left_wrist[1]; 
+            left_wrist_msg.z = left_wrist[2]
+            self.left_wrist_pub.publish(left_wrist_msg)
+        except Exception as e: 
+            rospy.logwarn("Exception: {}".format(str(e)))
 
-        left_wrist_msg.x = left_wrist[0]; 
-        left_wrist_msg.y = left_wrist[1]; 
-        left_wrist_msg.z = left_wrist[2]
-        right_wrist_msg.x = right_wrist[0]; 
-        right_wrist_msg.y = right_wrist[1]; 
-        right_wrist_msg.z = right_wrist[2]
-
-        self.left_wrist_pub.publish(left_wrist_msg)
-        self.right_wrist_pub.publish(right_wrist_msg)
+    def create_ROSmsg(self, pos_named): 
 
 
+        msg = TorsoJointPositions()
+        msg.header          = self.pcl.header
+        msg.frame_id.data        = "camera_color_frame"
+        try:
+            msg.left_elbow      = Vector3(pos_named["l_elbow"][0], pos_named["l_elbow"][1], pos_named["l_elbow"][2])
+            msg.right_elbow     = Vector3(pos_named["r_elbow"][0], pos_named["r_elbow"][1], pos_named["r_elbow"][2])
+            msg.left_shoulder   = Vector3(pos_named["l_shoulder"][0], pos_named["l_shoulder"][1], pos_named["l_shoulder"][2])
+            msg.right_shoulder  = Vector3(pos_named["r_shoulder"][0], pos_named["r_shoulder"][1], pos_named["r_shoulder"][2])
+            msg.left_wrist      = Vector3(pos_named["l_wrist"][0], pos_named["l_wrist"][1], pos_named["l_wrist"][2])
+            msg.right_wrist     = Vector3(pos_named["r_wrist"][0], pos_named["r_wrist"][1], pos_named["r_wrist"][2])
+            msg.success.data = True
+            rospy.loginfo("Created ROS msg!")
+        except Exception as e:
+            msg.success.data = False 
+            rospy.logwarn_throttle(2, "Create ROS msg failed: {}".format(e))
+
+        return msg
+    
 
     def run(self): 
 
@@ -206,11 +235,13 @@ class HumanPose3D():
                 # Get X,Y,Z coordinates for predictions
                 coords = self.get_coordinates(self.pcl, self.predictions, "xyz") # rospy.logdebug("coords: {}".format(coords))
                 # Create coordinate frames
-                tfs = self.create_keypoint_tfs(coords)
+                tfs, pos_named = self.create_keypoint_tfs(coords)
                 # Send transforms
                 self.send_transforms(tfs)
-                
-                self.publish_wrist_positions(tfs)
+                # Publish created ROS msg 
+                msg = self.create_ROSmsg(pos_named)
+                if msg: 
+                    self.upper_body_3d_pub.publish(msg)
 
                 measure_runtime = False; 
                 if measure_runtime:
