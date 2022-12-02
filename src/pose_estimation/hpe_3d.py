@@ -171,8 +171,7 @@ class HumanPose3D():
 
     def publish_wrist_positions(self): 
 
-
-
+        pass
 
 
     def run(self): 
