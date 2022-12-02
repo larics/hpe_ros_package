@@ -22,10 +22,9 @@ import sensor_msgs.point_cloud2 as pc2
 
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
-# - Read camera_info 
 # - add painting of a z measurements  
 # - Record bag of l shoulder, r shoulder and rest of the body parts 
-# 
+# - 
 
 class HumanPose3D(): 
 
@@ -149,6 +148,10 @@ class HumanPose3D():
                                      rospy.Time.now(), 
                                      self.indexing[int(index) + index_offset], 
                                      self.camera_frame_name)    # Should be camera but there's no transform from world to camera for now
+
+            # Each of this tf-s is basically distance from camera_frame_name to some other coordinate frame :) 
+            # use lookupTransform to fetch transform and estimate angles... 
+            
 
     def plot_depths(self, keypoints, depths): 
 
