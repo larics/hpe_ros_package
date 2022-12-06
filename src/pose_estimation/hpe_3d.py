@@ -64,15 +64,15 @@ class HumanPose3D():
         self.predictions_sub    = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
 
     def _init_publishers(self): 
-        self.left_wrist_pub = rospy.Publisher("leftw_point", Vector3, queue_size=1)
-        self.right_wrist_pub = rospy.Publisher("rightw_point", Vector3, queue_size=1)
-        self.upper_body_3d_pub = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
+        self.left_wrist_pub     = rospy.Publisher("leftw_point", Vector3, queue_size=1)
+        self.right_wrist_pub    = rospy.Publisher("rightw_point", Vector3, queue_size=1)
+        self.upper_body_3d_pub  = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
 
     def image_cb(self, msg): 
 
+        self.img        = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, -1)
         self.img_recv   = True
-        
-        self.img = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, -1)
+
 
     def pcl_cb(self, msg):
 
@@ -210,6 +210,7 @@ class HumanPose3D():
         msg.header          = self.pcl.header
         msg.frame_id.data        = "camera_color_frame"
         try:
+            msg.thorax            = Vector3(pos_named["thorax"][0], pos_named["l_elbow"][1], pos_named["l_elbow"][2])
             msg.left_elbow      = Vector3(pos_named["l_elbow"][0], pos_named["l_elbow"][1], pos_named["l_elbow"][2])
             msg.right_elbow     = Vector3(pos_named["r_elbow"][0], pos_named["r_elbow"][1], pos_named["r_elbow"][2])
             msg.left_shoulder   = Vector3(pos_named["l_shoulder"][0], pos_named["l_shoulder"][1], pos_named["l_shoulder"][2])

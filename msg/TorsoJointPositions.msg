@@ -1,6 +1,7 @@
 
 std_msgs/Header         header
 std_msgs/String         frame_id
+geometry_msgs/Vector3   thorax
 geometry_msgs/Vector3   left_shoulder
 geometry_msgs/Vector3   right_shoulder
 geometry_msgs/Vector3   left_elbow 
