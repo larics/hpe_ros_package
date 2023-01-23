@@ -16,9 +16,7 @@ from std_msgs.msg import Float64MultiArray, Float32
 from geometry_msgs.msg import Vector3
 from hpe_ros_package.msg import TorsoJointPositions
 
-
 import sensor_msgs.point_cloud2 as pc2
-
 
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
@@ -33,7 +31,7 @@ class hpe2cmd():
 
         self.rate = rospy.Rate(int(float(freq)))
 
-        self.hpe3d_recv           = False
+        self.hpe3d_recv = False
 
         # Initialize publishers and subscribers
         self._init_subscribers()
@@ -45,8 +43,9 @@ class hpe2cmd():
         self.unit_z = np.array([0, 0, 1])
 
         self.camera_frame_name = "camera_color_frame"
-        # Initialize transform broadcaster                  
+        # Initialize transform listener                  
         self.tf_br = tf.TransformListener()
+        self.ntf_br = tf.TransformBroadcaster()
 
         rospy.loginfo("[Hpe3D] started!")
 
@@ -74,12 +73,13 @@ class hpe2cmd():
         self.p_base_shoulder = self.createPvect(msg.left_shoulder) 
         self.p_base_elbow = self.createPvect(msg.left_elbow)
         self.p_base_wrist = self.createPvect(msg.left_wrist)
+        # Broadcast this vects as new TFs
         # p_base_shoulder - p_base_neck
-        self.p_thorax_shoulder = self.p_base_shoulder - self.p_base_thorax
+        self.p_thorax_shoulder = (self.p_base_shoulder - self.p_base_thorax)* (-1)
         # p_base_elbow - p_base_shoulder 
-        self.p_shoulder_elbow = self.p_base_elbow - self.p_base_shoulder
+        self.p_shoulder_elbow = (self.p_base_elbow - self.p_base_shoulder) * (-1)
         # p_base_wrist - p_base_elbow
-        self.p_elbow_wrist = self.p_base_wrist - self.p_base_elbow
+        self.p_elbow_wrist = (self.p_base_wrist - self.p_base_elbow) * (-1)
         # recieved HPE 3D
         self.hpe3d_recv = True
 
@@ -90,8 +90,38 @@ class hpe2cmd():
         self.shoulder_yaw_angle_pub.publish(self.yaw_angle)
         self.elbow_angle_pub.publish(self.elbow_angle)
 
+    def send_transform(self, p_vect, parent_frame, child_frame):
+
+        debug = False
+        if debug: 
+            rospy.loginfo("P^{0}_{1}: {2}".format(parent_frame, child_frame, p_vect))
+
+        self.ntf_br.sendTransform((p_vect[0], p_vect[1], p_vect[2]), 
+                                  (0, 0, 0, 1), 
+                                  rospy.Time.now(), 
+                                  child_frame, 
+                                  parent_frame)
+
+
+    def send_arm_transforms(self): 
+
+        try:
+            self.send_transform(self.p_thorax_shoulder, 
+                                "n_thorax", 
+                                "left_shoulder")
+            self.send_transform(self.p_shoulder_elbow, 
+                                "left_shoulder",
+                                "left_elbow")
+            self.send_transform(self.p_elbow_wrist, 
+                                "left_elbow", 
+                                "left_wrist")
+        except Exception as e: 
+            rospy.logwarn("Sending arm transforms failed: {}".format(str(e)))
+
+
     def get_arm_angles(self): 
 
+        # Control of left arm 
         # 3 Shoulder angles 
         self.roll_angle = self.get_angle(self.p_shoulder_elbow, 'xz')  # anterior axis shoulder (xz)
         self.pitch_angle = self.get_angle(self.p_shoulder_elbow, 'yz') # mediolateral axis (yz) 
@@ -103,10 +133,10 @@ class hpe2cmd():
         rospy.logdebug("Shoulder yaw angle: {}".format(self.yaw_angle))
         rospy.logdebug("Sholder elbow angle: {}".format(self.elbow_angle))
 
-    def get_angle(self, vectI, plane_="xy", format="radians"): 
+    def get_angle(self, vectI, plane_="xy", format="degrees"): 
 
         # theta = cos-1 [ (a * b) / (abs(a) abs(b)) ]
-        # Orthogonal projection of the vectore to the wanted plane
+        # Orthogonal projection of the vector to the wanted plane
         vectPlane = self.getOrthogonalVect(vectI, plane_)
         # Angle between orthogonal projection of the vector and the 
 
@@ -165,11 +195,12 @@ class hpe2cmd():
                 # Maybe save indices for easier debugging
                 start_time = rospy.Time.now().to_sec()
                 # Get angles arm joint have
-                self.get_arm_angles()
+                # self.get_arm_angles()
+                self.send_arm_transforms()
 
-                self.publish_arm_angles()
+                #self.publish_arm_angles()
                 
-                measure_runtime = True; 
+                measure_runtime = False; 
                 if measure_runtime:
                     duration = rospy.Time.now().to_sec() - start_time
                     rospy.logdebug("Run t: {}".format(duration)) # --> very fast!

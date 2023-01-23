@@ -105,10 +105,10 @@ class HumanPoseEstimationROS():
         
         if self.use_depth:
             # Xtion Cam
-            self.camera_sub = rospy.Subscriber("camera/rgb/image_raw", Image, self.image_cb, queue_size=1)
+            self.camera_sub = rospy.Subscriber("/camera/color/image_raw", Image, self.image_cb, queue_size=1)
         else:
             # USB Cam
-            self.camera_sub = rospy.Subscriber("camera/color/image_raw", Image, self.image_cb, queue_size=1)
+            self.camera_sub = rospy.Subscriber("/camera/color/image_raw", Image, self.image_cb, queue_size=1)
             self.camera_info_sub = rospy.Subscriber("camera/color/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
             
         #self.darknet_sub = rospy.Subscriber("/darknet_ros/bounding_boxes", BoundingBoxes, self.darknet_cb, queue_size=1)
@@ -321,9 +321,9 @@ class HumanPoseEstimationROS():
                 start_time = rospy.Time.now().to_sec()
                 
                 # Convert ROS Image to PIL 
-                start_time1 = rospy.Time.now().to_sec()
+                # start_time1 = rospy.Time.now().to_sec()
                 pil_img = PILImage.fromarray(self.org_img.astype('uint8'), 'RGB')
-                rospy.logdebug("Conversion to PIL Image from numpy: {}".format(rospy.Time.now().to_sec() - start_time1))
+                # rospy.logdebug("Conversion to PIL Image from numpy: {}".format(rospy.Time.now().to_sec() - start_time1))
                 
                 # Get NN Output ## TODO: Check if this could be made shorter :) 
                 rospy.logdebug(type(self.nn_input))
@@ -344,10 +344,10 @@ class HumanPoseEstimationROS():
                 for pred in preds[0]:
                     pred[0] = pred[0]  * (self.img_width/88)
                     pred[1] = pred[1]  * (self.img_height/88)
-                rospy.logdebug(str(preds[0][0][0]) + "   " + str(preds[0][0][1]))
+                # rospy.logdebug(str(preds[0][0][0]) + "   " + str(preds[0][0][1]))
                 
-                rospy.logdebug("Preds are: {}".format(preds))     
-                rospy.logdebug("Preds shape is: {}".format(preds.shape))
+                # rospy.logdebug("Preds are: {}".format(preds))     
+                # rospy.logdebug("Preds shape is: {}".format(preds.shape))
                 # Preds shape is [1, 16, 2] (or num persons is first dim)
                 # rospy.loginfo("Preds shape is: {}".format(preds[0].shape))
                 
@@ -378,12 +378,12 @@ class HumanPoseEstimationROS():
                 self.pred_pub.publish(preds_ros_msg)
 
                 duration = rospy.Time.now().to_sec() - start_time
-                debug_runtime = False
+                debug_runtime = True
                 if debug_runtime:
                     rospy.loginfo("Run duration is: {}".format(duration))
 
             
-            self.rate.sleep()
+            #self.rate.sleep()
 
     @staticmethod        
     def avg_list(list_data):
@@ -398,7 +398,7 @@ class HumanPoseEstimationROS():
     @staticmethod
     def draw_stickman(img, predictions):
         
-
+        # TODO: Add keypoint drawing to know which keypoint is being drawn!
         draw  = ImageDraw.Draw(img)
 
         font_ = ImageFont.truetype("/home/developer/catkin_ws/src/hpe_ros_package/include/arial.ttf", 20, encoding="unic")

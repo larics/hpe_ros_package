@@ -210,7 +210,7 @@ class HumanPose3D():
         msg.header          = self.pcl.header
         msg.frame_id.data        = "camera_color_frame"
         try:
-            msg.thorax            = Vector3(pos_named["thorax"][0], pos_named["l_elbow"][1], pos_named["l_elbow"][2])
+            msg.thorax          = Vector3(pos_named["thorax"][0], pos_named["thorax"][1], pos_named["thorax"][2])
             msg.left_elbow      = Vector3(pos_named["l_elbow"][0], pos_named["l_elbow"][1], pos_named["l_elbow"][2])
             msg.right_elbow     = Vector3(pos_named["r_elbow"][0], pos_named["r_elbow"][1], pos_named["r_elbow"][2])
             msg.left_shoulder   = Vector3(pos_named["l_shoulder"][0], pos_named["l_shoulder"][1], pos_named["l_shoulder"][2])
@@ -218,7 +218,7 @@ class HumanPose3D():
             msg.left_wrist      = Vector3(pos_named["l_wrist"][0], pos_named["l_wrist"][1], pos_named["l_wrist"][2])
             msg.right_wrist     = Vector3(pos_named["r_wrist"][0], pos_named["r_wrist"][1], pos_named["r_wrist"][2])
             msg.success.data = True
-            rospy.loginfo("Created ROS msg!")
+            rospy.logedbug("Created ROS msg!")
         except Exception as e:
             msg.success.data = False 
             rospy.logwarn_throttle(2, "Create ROS msg failed: {}".format(e))
