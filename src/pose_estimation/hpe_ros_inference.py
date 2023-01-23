@@ -441,9 +441,6 @@ class HumanPoseEstimationROS():
         point_r = 4
         fill_ = (153, 255, 255)
 
-        print(predictions)
-        print(len(predictions))
-
         # Draw points:
         for i, pred in enumerate(predictions): 
             draw.ellipse([(pred[0] - point_r, pred[1] - point_r),
@@ -451,7 +448,7 @@ class HumanPoseEstimationROS():
 
         for i, skelet in enumerate(skeleton): 
             draw.line([(predictions[skelet[0]][0], predictions[skelet[0]][1]),
-                       (predictions[skelet[1]][0], predictions[skelet[1]][1])], fill=(i*10, 75, 200), width=4)
+                       (predictions[skelet[1]][0], predictions[skelet[1]][1])], fill=(50, i*10, 200), width=4)
 
         return img
 

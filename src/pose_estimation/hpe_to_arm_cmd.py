@@ -70,16 +70,22 @@ class hpe2cmd():
         self.hpe3d_recv_t = msg.header.stamp # -> to system time 
         # Extract data --> Fix pBaseNeck
         self.p_base_thorax  = self.createPvect(msg.thorax)         # could be camera_link_frame - thorax
-        self.p_base_shoulder = self.createPvect(msg.left_shoulder) 
-        self.p_base_elbow = self.createPvect(msg.left_elbow)
-        self.p_base_wrist = self.createPvect(msg.left_wrist)
+        self.p_base_lshoulder = self.createPvect(msg.left_shoulder) 
+        self.p_base_lelbow = self.createPvect(msg.left_elbow)
+        self.p_base_lwrist = self.createPvect(msg.left_wrist)
+        self.p_base_rshoulder = self.createPvect(msg.right_shoulder)
+        self.p_base_relbow = self.createPvect(msg.right_elbow)
+        self.p_base_rwrist = self.createPvect(msg.right_wrist)
         # Broadcast this vects as new TFs
         # p_base_shoulder - p_base_neck
-        self.p_thorax_shoulder = (self.p_base_shoulder - self.p_base_thorax)* (-1)
-        # p_base_elbow - p_base_shoulder 
-        self.p_shoulder_elbow = (self.p_base_elbow - self.p_base_shoulder) * (-1)
-        # p_base_wrist - p_base_elbow
-        self.p_elbow_wrist = (self.p_base_wrist - self.p_base_elbow) * (-1)
+        # Left arm
+        self.p_thorax_lshoulder = (self.p_base_lshoulder - self.p_base_thorax) * (-1)
+        self.p_shoulder_lelbow = (self.p_base_lelbow - self.p_base_lshoulder) * (-1)
+        self.p_elbow_lwrist = (self.p_base_lwrist - self.p_base_lelbow) * (-1)
+        # Right arm 
+        self.p_thorax_rshoulder = (self.p_base_rshoulder - self.p_base_thorax) * (-1)
+        self.p_shoulder_relbow = (self.p_base_relbow - self.p_base_rshoulder) * (-1)
+        self.p_elbow_rwrist = (self.p_base_rwrist - self.p_base_relbow) * (-1)
         # recieved HPE 3D
         self.hpe3d_recv = True
 
@@ -102,22 +108,29 @@ class hpe2cmd():
                                   child_frame, 
                                   parent_frame)
 
-
     def send_arm_transforms(self): 
 
         try:
-            self.send_transform(self.p_thorax_shoulder, 
+            self.send_transform(self.p_thorax_lshoulder, 
                                 "n_thorax", 
                                 "left_shoulder")
-            self.send_transform(self.p_shoulder_elbow, 
+            self.send_transform(self.p_shoulder_lelbow, 
                                 "left_shoulder",
                                 "left_elbow")
-            self.send_transform(self.p_elbow_wrist, 
+            self.send_transform(self.p_elbow_lwrist, 
                                 "left_elbow", 
                                 "left_wrist")
+            self.send_transform(self.p_thorax_rshoulder, 
+                                "n_thorax", 
+                                "right_shoulder")
+            self.send_transform(self.p_shoulder_relbow, 
+                                "right_shoulder", 
+                                "right_elbow")
+            self.send_transform(self.p_elbow_rwrist, 
+                                "right_elbow", 
+                                "right_wrist")
         except Exception as e: 
             rospy.logwarn("Sending arm transforms failed: {}".format(str(e)))
-
 
     def get_arm_angles(self): 
 
@@ -182,7 +195,6 @@ class hpe2cmd():
 
         if not self.hpe3d_recv:
             rospy.logwarn_throttle(1, "Human pose estimation from camera stream has not been recieved.")
-
 
     def run(self): 
 

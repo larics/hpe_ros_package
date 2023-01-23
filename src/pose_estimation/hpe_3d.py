@@ -44,9 +44,19 @@ class HumanPose3D():
         self._init_publishers()
 
         # MPII keypoint indexing
-        self.indexing = {0:"r_ankle", 1:"r_knee", 2:"r_hip", 3:"l_hip", 4: "l_knee", 5: "l_ankle",
+        self.mpii_indexing = {0:"r_ankle", 1:"r_knee", 2:"r_hip", 3:"l_hip", 4: "l_knee", 5: "l_ankle",
                          6:"pelvis", 7:"thorax", 8:"upper_neck", 9:"head_top", 10:"r_wrist",
                          11:"r_elbow", 12:"r_shoulder", 13:"l_shoulder", 14:"l_elbow", 15:"l_wrist"}
+
+        self.coco_indexing = {0: "nose", 1:"l_eye", 2:"r_eye", 3:"l_ear", 4:"r_ear", 5:"l_shoulder", 
+                              6:"r_shoulder", 7:"l_elbow", 8:"r_elbow", 9:"l_wrist", 10:"r_wrist", 
+                              11:"l_hip", 12:"r_hip", 13:"l_knee", 14:"r_knee", 15:"l_ankle", 16:"r_ankle"}
+        
+        self.coco = True
+        self.mpii = False
+        # self.indexing = different indexing depending on weights that are used!
+        if self.mpii: self.indexing = self.mpii_indexing
+        if self.coco: self.indexing = self.coco_indexing
 
 
         self.camera_frame_name = "camera_color_frame"
@@ -141,12 +151,11 @@ class HumanPose3D():
 
         for index, tf in tfs.items():
             
-            index_offset = 0    # Index offset is used to use only upper parts of the body for demonstration purposes
             x,y,z = tf[0], tf[1], tf[2]
             self.tf_br.sendTransform((x, y, z),
                                      (0, 0, 0, 1), # Hardcoded orientation for now
                                      rospy.Time.now(), 
-                                     self.indexing[int(index) + index_offset], 
+                                     self.indexing[int(index)], 
                                      self.camera_frame_name)    # Should be camera but there's no transform from world to camera for now
 
             # Each of this tf-s is basically distance from camera_frame_name to some other coordinate frame :) 
@@ -177,32 +186,6 @@ class HumanPose3D():
             rospy.logwarn_throttle(1, "Prediction is not recieved! Check topic names, camera type and model initialization!")
 
 
-    # TODO: Extract wrist, elbow, shoulder
-    def publish_wrist_positions(self, tfs): 
-
-        left_wrist_msg = Vector3(); right_wrist_msg = Vector3(); 
-
-        rospy.logdebug("Lenghts of tfs: {}".format(len(tfs)))
-        #rospy.logdebug("Left wrist is: {}".format(left_wrist))
-        #rospy.logdebug("Right wrist is: {}".format(right_wrist))
-        try: 
-            right_wrist = tfs["{}".format(str(3))] # 10-6 # NO FOUR? 
-            right_wrist_msg.x = right_wrist[0]; 
-            right_wrist_msg.y = right_wrist[1]; 
-            right_wrist_msg.z = right_wrist[2]
-            self.right_wrist_pub.publish(right_wrist_msg)
-        except Exception as e: 
-            rospy.logwarn("Exception: {}".format(str(e)))
-
-        try: 
-            left_wrist = tfs["{}".format(str(9))]  # 15-6
-            left_wrist_msg.x = left_wrist[0]; 
-            left_wrist_msg.y = left_wrist[1]; 
-            left_wrist_msg.z = left_wrist[2]
-            self.left_wrist_pub.publish(left_wrist_msg)
-        except Exception as e: 
-            rospy.logwarn("Exception: {}".format(str(e)))
-
     def create_ROSmsg(self, pos_named): 
 
 
@@ -210,7 +193,14 @@ class HumanPose3D():
         msg.header          = self.pcl.header
         msg.frame_id.data        = "camera_color_frame"
         try:
-            msg.thorax          = Vector3(pos_named["thorax"][0], pos_named["thorax"][1], pos_named["thorax"][2])
+            # COCO doesn't have THORAX!
+            if self.coco: 
+                thorax = Vector3((pos_named["l_shoulder"][0] + pos_named["r_shoulder"][0])/2, 
+                                 (pos_named["l_shoulder"][1] + pos_named["r_shoulder"][1])/2, 
+                                 (pos_named["l_shoulder"][2] + pos_named["r_shoulder"][2])/2)
+                msg.thorax = thorax
+            else: 
+                msg.thorax      = Vector3(pos_named["thorax"][0], pos_named["thorax"][1], pos_named["thorax"][2])
             msg.left_elbow      = Vector3(pos_named["l_elbow"][0], pos_named["l_elbow"][1], pos_named["l_elbow"][2])
             msg.right_elbow     = Vector3(pos_named["r_elbow"][0], pos_named["r_elbow"][1], pos_named["r_elbow"][2])
             msg.left_shoulder   = Vector3(pos_named["l_shoulder"][0], pos_named["l_shoulder"][1], pos_named["l_shoulder"][2])
@@ -218,7 +208,7 @@ class HumanPose3D():
             msg.left_wrist      = Vector3(pos_named["l_wrist"][0], pos_named["l_wrist"][1], pos_named["l_wrist"][2])
             msg.right_wrist     = Vector3(pos_named["r_wrist"][0], pos_named["r_wrist"][1], pos_named["r_wrist"][2])
             msg.success.data = True
-            rospy.logedbug("Created ROS msg!")
+            rospy.logedebug("Created ROS msg!")
         except Exception as e:
             msg.success.data = False 
             rospy.logwarn_throttle(2, "Create ROS msg failed: {}".format(e))
