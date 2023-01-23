@@ -60,6 +60,10 @@ class HumanPoseEstimationROS():
         torch.backends.cudnn.deterministic = config.CUDNN.DETERMINISTIC
         torch.backends.cudnn.enabled = config.CUDNN.ENABLED
 
+        # Hardcoded for now (not neccessary to have it as param!)
+        self.coco = True
+        self.mpii = False
+
         self.model_ready = False
         self.first_img_reciv = False
         self.nn_input_formed = False
@@ -344,12 +348,6 @@ class HumanPoseEstimationROS():
                 for pred in preds[0]:
                     pred[0] = pred[0]  * (self.img_width/88)
                     pred[1] = pred[1]  * (self.img_height/88)
-                # rospy.logdebug(str(preds[0][0][0]) + "   " + str(preds[0][0][1]))
-                
-                # rospy.logdebug("Preds are: {}".format(preds))     
-                # rospy.logdebug("Preds shape is: {}".format(preds.shape))
-                # Preds shape is [1, 16, 2] (or num persons is first dim)
-                # rospy.loginfo("Preds shape is: {}".format(preds[0].shape))
                 
                 if self.filter_predictions_:
                     preds = self.filter_predictions(preds, "avg", 5)
@@ -357,7 +355,11 @@ class HumanPoseEstimationROS():
                     preds = preds[0]
 
                 # Draw stickman
-                stickman = HumanPoseEstimationROS.draw_stickman(pil_img, preds)
+                if self.coco:
+                    stickman = HumanPoseEstimationROS.draw_coco_stickman(pil_img, preds)
+                
+                if self.mpii: 
+                    stickman = HumanPoseEstimationROS.draw_mpii_stickman(pil_img, preds)
                 
                 # If compressed_stickman (zones don't work, no subscriber on compressed)
                 if self.compressed_stickman: 
@@ -396,7 +398,7 @@ class HumanPoseEstimationROS():
         return statistics.median(list_data)
 
     @staticmethod
-    def draw_stickman(img, predictions):
+    def draw_mpii_stickman(img, predictions):
         
         # TODO: Add keypoint drawing to know which keypoint is being drawn!
         draw  = ImageDraw.Draw(img)
@@ -422,6 +424,34 @@ class HumanPoseEstimationROS():
             if i < len(predictions) - 1 and i != 5 and i != 9:      
                 draw.line([(predictions[i][0], predictions[i][1]), (predictions[i + 1][0], predictions[i + 1][1])], fill=(153, 255, 255), width=2)
 
+
+        return img
+
+    @staticmethod
+    def draw_coco_stickman(img, predictions): 
+
+
+        draw = ImageDraw.Draw(img)
+
+        skeleton= [[16,14],[14,12],[17,15],[15,13],[12,13],[6,12],[7,13],[6,7], [6,8],[7,9],[8,10],[9,11],[2,3],[1,2],[1,3],[2,4],[3,5]]
+        
+        # Fix for python indexing
+        skeleton = [[s[0]-1, s[1]-1] for s in skeleton] 
+
+        point_r = 4
+        fill_ = (153, 255, 255)
+
+        print(predictions)
+        print(len(predictions))
+
+        # Draw points:
+        for i, pred in enumerate(predictions): 
+            draw.ellipse([(pred[0] - point_r, pred[1] - point_r),
+                          (pred[0] + point_r, pred[1] + point_r)], fill=fill_, width=2*point_r)
+
+        for i, skelet in enumerate(skeleton): 
+            draw.line([(predictions[skelet[0]][0], predictions[skelet[0]][1]),
+                       (predictions[skelet[1]][0], predictions[skelet[1]][1])], fill=(i*10, 75, 200), width=4)
 
         return img
 
