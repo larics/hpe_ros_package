@@ -20,7 +20,7 @@ roslaunch hpe_ros_package hpe_3d.launch
 
 ### System architecture 
 
-[Figure 1.](./docs/system_arch.png)
+![Figure 1.](./docs/system_arch.png)
 
 Initial draft of system architecture is shown on Figure 1., most
 interesting problems are: 
@@ -37,14 +37,15 @@ Code for the acore and EPFL experiments contains decoupled launch files for easi
 
 ### TODO High priority: 
 
- - [ ] Try 3d pose estimation (2D + depth) 
+ - [x] Try 3d pose estimation (2D + depth)
+ - [ ] Publish Cartesian tooltip position (r_wrist, l_wrist) 
+ - [ ] Integrate with [antrop_arms](https://github.com/larics/antrop_arms_ros)
  - [ ] Finish depth control (pitch/depth control)
- - [ ] Publish Cartesian tooltip position 
  - [ ] Implement inverse kinematics
 
 ### TODO Low priority: 
 
- - [ ] Add simple object detection (`darknet_ros`) for better hpe  
- - [ ] Try HRNet --> TBD (not neccesary for now)  
- - [ ] Implement correct post processing as stated [here](https://github.com/microsoft/human-pose-estimation.pytorch/issues/26) 
+ ~~ - [ ] Add simple object detection (`darknet_ros`) for better hpe  ~~
+ ~~ - [ ] Try HRNet --> TBD (not neccesary for now)  ~~
+ ~~ - [ ] Implement correct post processing as stated [here](https://github.com/microsoft/human-pose-estimation.pytorch/issues/26) ~~
  
