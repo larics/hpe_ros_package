@@ -22,6 +22,7 @@ import sensor_msgs.point_cloud2 as pc2
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
 # - Read camera_info 
 # - add painting of a z measurements  
+# - This is something that could be useful!
 
 class hpe2cmd(): 
 
@@ -78,7 +79,7 @@ class hpe2cmd():
         self.p_base_rwrist = self.createPvect(msg.right_wrist)
         # Broadcast this vects as new TFs
         # p_base_shoulder - p_base_neck
-        # Left arm
+        # Left arm --> these are the vectors from which we should extract angles :) 
         self.p_thorax_lshoulder = (self.p_base_lshoulder - self.p_base_thorax) * (-1)
         self.p_shoulder_lelbow = (self.p_base_lelbow - self.p_base_lshoulder) * (-1)
         self.p_elbow_lwrist = (self.p_base_lwrist - self.p_base_lelbow) * (-1)
@@ -135,39 +136,35 @@ class hpe2cmd():
     def get_arm_angles(self): 
 
         # Control of left arm 
-        # 3 Shoulder angles 
-        self.roll_angle = self.get_angle(self.p_shoulder_elbow, 'xz')  # anterior axis shoulder (xz)
-        self.pitch_angle = self.get_angle(self.p_shoulder_elbow, 'yz') # mediolateral axis (yz) 
-        self.yaw_angle = self.get_angle(self.p_shoulder_elbow, 'xy')   # longitudinal axis (xy)
-        self.elbow_angle = self.get_angle(self.p_elbow_wrist, 'yz')
+        # 3 Shoulder angles --> check the left side :) 
+        self.roll_angle = self.get_angle(self.p_shoulder_lelbow, 'yz', 'z')  # anterior axis shoulder (xz)
+        self.pitch_angle = self.get_angle(self.p_shoulder_lelbow, 'xz', 'z') # mediolateral axis (yz) 
+        self.yaw_angle = self.get_angle(self.p_shoulder_lelbow, 'xy', 'x')   # longitudinal axis (xy)
+        self.elbow_angle = self.get_angle(self.p_elbow_lwrist, 'yz', 'z')
 
         rospy.logdebug("Shoulder roll angle: {}".format(self.roll_angle))
         rospy.logdebug("Shoulder pitch angle: {}".format(self.pitch_angle))
         rospy.logdebug("Shoulder yaw angle: {}".format(self.yaw_angle))
         rospy.logdebug("Sholder elbow angle: {}".format(self.elbow_angle))
 
-    def get_angle(self, vectI, plane_="xy", format="degrees"): 
+    def get_angle(self, vectI, plane="xy", rAxis = "x", format="degrees"): 
 
         # theta = cos-1 [ (a * b) / (abs(a) abs(b)) ]
         # Orthogonal projection of the vector to the wanted plane
-        vectPlane = self.getOrthogonalVect(vectI, plane_)
+        vectPlane = self.getOrthogonalVect(vectI, plane)
         # Angle between orthogonal projection of the vector and the 
 
-        if plane_ =="xy":
+        if rAxis == "x": 
             vectBase = self.unit_x
-        if plane_ == "xz": 
-            vectBase = self.unit_x
-        if plane_ == "yz": 
+        if rAxis == "y": 
             vectBase = self.unit_y
+        if rAxis == "z": 
+            vectBase = self.unit_z
 
         # All angles have 270deg offset -> radians      
         # TODO: Check if this is norm or absolute value
-        value = np.dot(vectPlane, vectBase)/(np.linalg.norm(vectPlane) * np.linalg.norm(vectBase))
+        value = np.dot(vectPlane, vectBase)/(np.linalg.norm(vectPlane))
         angle = np.arccos(value)
-
-        remove_offset = False 
-        if remove_offset:
-            angle = angle - 270 * np.pi/180 
 
         if format == "degrees": 
             angle = np.degrees(angle)
@@ -207,7 +204,7 @@ class hpe2cmd():
                 # Maybe save indices for easier debugging
                 start_time = rospy.Time.now().to_sec()
                 # Get angles arm joint have
-                # self.get_arm_angles()
+                self.get_arm_angles()
                 self.send_arm_transforms()
 
                 #self.publish_arm_angles()
