@@ -1,13 +1,17 @@
 <launch>
 
-    <arg name="frequency" value="30"/>
+    <arg name="frequency" value="15"/>
     <arg name="bag_path" value="/home/developer"/>
-    <arg name="bag_name" value="hpe.bag"/>
+    <arg name="bag_name" value="hpe_openpose.bag"/>
 
     <!-- play rosbag containing extracted 3d pose of the body -->
-    <node pkg="rosbag" type="play" name="player" output="screen" args="--clock /$(arg bag_path)/$(arg bag_name)"/>
-    
+    <!--node pkg="rosbag" type="play" name="player" output="screen" args="clock /$(arg bag_path)/$(arg bag_name)"/-->
+    <node pkg="rosbag" type="play" name="player" args="/$(arg bag_path)/$(arg bag_name)"/> <!--output="screen"-->
+
+
     <!-- Transform HPE to CMD -->
-    <node name="hpe_to_cmd_node" pkg="hpe_ros_package" type="hpe_to_arm_cmd.py" args="$(arg frequency)" output="screen" />
+    <!--node name="hpe_to_cmd_node" pkg="hpe_ros_package" type="hpe_to_arm_cmd.py" args="$(arg frequency)" output="screen" /-->
+
+    <node name="hpe_to_uav_node" pkg="hpe_ros_package" type="hpe_to_uav_cmd.py" args="$(arg frequency)" output="screen" />
 
 </launch>

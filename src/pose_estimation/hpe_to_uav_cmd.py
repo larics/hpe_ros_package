@@ -11,6 +11,7 @@ from std_msgs.msg import Float64MultiArray, Float32
 from geometry_msgs.msg import Vector3
 from hpe_ros_package.msg import TorsoJointPositions
 from geometry_msgs.msg import PoseStamped
+from visualization_msgs.msg import Marker
 
 
 # TODO:
@@ -60,7 +61,8 @@ class hpe2uavcmd():
         # self.yaw_pub = rospy.Publisher("yaw")
         # self.height_pub = rospy.Publisher("height")
         self.pos_pub = rospy.Publisher("uav/pos_ref", Vector3)
-        pass
+        self.marker_pub = rospy.Publisher("ctl/viz", Marker)
+        self.cb_point_marker_pub = rospy.Publisher("ctl/cb_point", Marker)    
 
     def hpe3d_cb(self, msg):
 
@@ -109,6 +111,29 @@ class hpe2uavcmd():
             rospy.loginfo("Calibration point is: {}".format(self.calib_point))
             return True
 
+    def create_marker(self, shape, px, py, pz, dist_x, dist_y, dist_z): 
+        marker = Marker()
+        marker.header.frame_id = "world"
+        marker.header.stamp = rospy.Time().now()
+        marker.ns = "arrow"
+        marker.id = 0
+        marker.type = Marker.ARROW
+        marker.action = Marker.ADD
+        marker.pose.position.x = self.calib_point.x
+        marker.pose.position.y = self.calib_point.y
+        marker.pose.position.z = self.calib_point.z
+        marker.pose.orientation.x = 0.0
+        marker.pose.orientation.y = 0.0
+        marker.pose.orientation.z = 0.0
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = dist_x
+        marker.scale.y = dist_y
+        marker.scale.z = dist_z
+        marker.color.a = 1.0
+        marker.color.r = 0.0
+        marker.color.g = 1.0
+        return marker
+
     def run_ctl(self, r, R):
 
         dist_x = (self.calib_point.x - self.p_base_lwrist[0])
@@ -135,23 +160,22 @@ class hpe2uavcmd():
 
         scaling_x = 0.25; scaling_y = 0.25; scaling_z = 0.25;
         pos_ref = Vector3()
+        # This summation is mad (too fast change of a reference)
         #pos_ref.x = self.currentPose.pose.position.x + self.body_ctl.x * scaling_x
         #pos_ref.y = self.currentPose.pose.position.y + self.body_ctl.y * scaling_y
         pos_ref.z = self.currentPose.pose.position.z + self.body_ctl.z * scaling_z
         self.pos_pub.publish(pos_ref)
         #rospy.loginfo("Publishing x: {}".format(pos_ref.x))
         #rospy.loginfo("Publishing y: {}".format(pos_ref.y))
-        rospy.loginfo("Publishing z: {}".format(pos_ref.z))
 
-
-        # TODO: Test how it works :) 
-        # Z - height
-        # X - pitch
-        # Y - roll||yaw
+        # ARROW to visualize direction of a command
+        arrowMsg = self.create_marker(dist_x, dist_y, dist_z)
+        self.marker_pub.publish(arrowMsg)
 
         debug = False
         if debug:
-
+            rospy.loginfo("Dist z: {}".format(dist_z))
+            rospy.loginfo("Publishing z: {}".format(pos_ref.z))
             rospy.loginfo("dx: {}\t dy: {}\t dz: {}\t".format(dist_x, dist_y, dist_z))
 
     def run(self):
@@ -169,9 +193,16 @@ class hpe2uavcmd():
 
             # We can start control if we have calibrated point
             if run_ready and calibrated:
-                r_ = 0.15
-                R_ = 0.5
+                r_ = 0.05
+                R_ = 0.25
+                # Deadzone is 
                 self.run_ctl(r_, R_)
+                
+                # Publish markers
+                cbMarker = self.create_marker(Marker.SPHERE, self.calib_point.x, 
+                                              self.calib_point.y, self.calib_point.z, 
+                                              0.1, 0.1, 0.1)
+                self.cb_point_marker_pub.publish(cbMarker)
 
 
             self.rate.sleep()
