@@ -139,8 +139,19 @@ class hpe2cmd():
         # 3 Shoulder angles --> check the left side :) 
         self.roll_angle = self.get_angle(self.p_shoulder_lelbow, 'yz', 'z')  # anterior axis shoulder (xz)
         self.pitch_angle = self.get_angle(self.p_shoulder_lelbow, 'xz', 'z') # mediolateral axis (yz) 
-        self.yaw_angle = self.get_angle(self.p_shoulder_lelbow, 'xy', 'x')   # longitudinal axis (xy)
-        self.elbow_angle = self.get_angle(self.p_elbow_lwrist, 'yz', 'z')
+        self.yaw_angle = self.get_angle(self.p_shoulder_lelbow, 'xy', 'x')  # longitudinal axis (xy)
+        self.elbow_angle = self.get_angle(self.p_elbow_lwrist, 'yz', 'z') #
+
+        # Extract angle directions
+        if self.p_shoulder_lelbow[0] < 0:
+            self.pitch_angle *= -1
+        if self.p_elbow_lwrist[0] < 0: 
+            self.elbow_angle *= -1
+        if self.p_shoulder_lelbow[1] < 0:
+            self.yaw_angle *= -1
+        if self.p_shoulder_lelbow[1] > 0: 
+            self.roll_angle *= -1
+
 
         rospy.logdebug("Shoulder roll angle: {}".format(self.roll_angle))
         rospy.logdebug("Shoulder pitch angle: {}".format(self.pitch_angle))
