@@ -113,11 +113,11 @@ class hpe2uavcmd():
 
     def create_marker(self, shape, px, py, pz, dist_x, dist_y, dist_z): 
         marker = Marker()
-        marker.header.frame_id = "world"
+        marker.header.frame_id = "n_thorax"
         marker.header.stamp = rospy.Time().now()
         marker.ns = "arrow"
         marker.id = 0
-        marker.type = Marker.ARROW
+        marker.type = shape
         marker.action = Marker.ADD
         marker.pose.position.x = self.calib_point.x
         marker.pose.position.y = self.calib_point.y
@@ -161,6 +161,7 @@ class hpe2uavcmd():
         scaling_x = 0.25; scaling_y = 0.25; scaling_z = 0.25;
         pos_ref = Vector3()
         # This summation is mad (too fast change of a reference)
+        # Command is too fast in this form :) 
         #pos_ref.x = self.currentPose.pose.position.x + self.body_ctl.x * scaling_x
         #pos_ref.y = self.currentPose.pose.position.y + self.body_ctl.y * scaling_y
         pos_ref.z = self.currentPose.pose.position.z + self.body_ctl.z * scaling_z
@@ -169,7 +170,8 @@ class hpe2uavcmd():
         #rospy.loginfo("Publishing y: {}".format(pos_ref.y))
 
         # ARROW to visualize direction of a command
-        arrowMsg = self.create_marker(dist_x, dist_y, dist_z)
+        arrowMsg = self.create_marker(Marker.ARROW, self.calib_point.x, self.calib_point.y, self.calib_point.z, 
+                                      dist_x, dist_y, dist_z)
         self.marker_pub.publish(arrowMsg)
 
         debug = False
@@ -210,5 +212,5 @@ class hpe2uavcmd():
 
 
 if __name__ == "__main__":
-    hpe2cmd_ = hpe2uavcmd(sys.argv[1])
-    hpe2cmd_.run()
+    hpe2uavcmd_ = hpe2uavcmd(sys.argv[1])
+    hpe2uavcmd_.run()

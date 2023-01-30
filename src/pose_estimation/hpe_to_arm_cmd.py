@@ -258,5 +258,5 @@ def get_RotZ(angle):
 
 if __name__ == "__main__": 
 
-    hpe2cmd_ = hpe2armcmd(sys.argv[1])
-    hpe2cmd_.run()
+    hpe2armcmd_ = hpe2armcmd(sys.argv[1])
+    hpe2armcmd_.run()
