@@ -10,6 +10,7 @@ import numpy as np
 from std_msgs.msg import Float64MultiArray, Float32
 from geometry_msgs.msg import Vector3
 from hpe_ros_package.msg import TorsoJointPositions
+from geometry_msgs.msg import PoseStamped
 
 
 # TODO:
@@ -46,6 +47,7 @@ class hpe2uavcmd():
 
         # self.hpe_3d_sub         = rospy.Subscriber("camera/color/image_raw", Image, self.hpe3d_cb, queue_size=1)
         self.hpe_3d_sub = rospy.Subscriber("upper_body_3d", TorsoJointPositions, self.hpe3d_cb, queue_size=1)
+        self.pos_sub = rospy.Subscriber("uav/pose", PoseStamped, self.pos_cb, queue_size=1)
 
     def _init_publishers(self):
 
@@ -57,6 +59,7 @@ class hpe2uavcmd():
         # self.pitch_pub = rospy.Publisher("pitch")
         # self.yaw_pub = rospy.Publisher("yaw")
         # self.height_pub = rospy.Publisher("height")
+        self.pos_pub = rospy.Publisher("uav/pos_ref", Vector3)
         pass
 
     def hpe3d_cb(self, msg):
@@ -68,6 +71,13 @@ class hpe2uavcmd():
 
         # recieved HPE 3D
         self.hpe3d_recv = True
+
+    def pos_cb(self, msg):
+
+        self.pos_recv = True
+        self.currentPose = PoseStamped()
+        self.currentPose.header = msg.header
+        self.currentPose.pose = msg.pose
 
     def createPvect(self, msg):
         # Create position vector from Vector3
@@ -99,16 +109,42 @@ class hpe2uavcmd():
             rospy.loginfo("Calibration point is: {}".format(self.calib_point))
             return True
 
-    def run_ctl(self):
+    def run_ctl(self, r, R):
 
         dist_x = (self.calib_point.x - self.p_base_lwrist[0])
         dist_y = (self.calib_point.y - self.p_base_lwrist[1]) * (-1)
         dist_z = (self.calib_point.z - self.p_base_lwrist[2]) * (-1)
 
         self.body_ctl = Vector3()
-        self.body_ctl.x = dist_x; self.body_ctl.y = dist_y; self.body_ctl.z = dist_z
 
-        # TODO: How to convert these measurements into commands
+        # X,Y are swapped because CFs of UAV and World are rotated for 90 degs
+        if R > abs(dist_y) > r:
+            self.body_ctl.x = dist_y
+        else:
+            self.body_ctl.x = 0
+
+        if R > abs(dist_x) > r:
+            self.body_ctl.y = dist_x
+        else:
+            self.body_ctl.y = 0
+
+        if R > abs(dist_z) > r:
+            self.body_ctl.z = dist_z
+        else:
+            self.body_ctl.z = 0
+
+        scaling_x = 0.25; scaling_y = 0.25; scaling_z = 0.25;
+        pos_ref = Vector3()
+        #pos_ref.x = self.currentPose.pose.position.x + self.body_ctl.x * scaling_x
+        #pos_ref.y = self.currentPose.pose.position.y + self.body_ctl.y * scaling_y
+        pos_ref.z = self.currentPose.pose.position.z + self.body_ctl.z * scaling_z
+        self.pos_pub.publish(pos_ref)
+        #rospy.loginfo("Publishing x: {}".format(pos_ref.x))
+        #rospy.loginfo("Publishing y: {}".format(pos_ref.y))
+        rospy.loginfo("Publishing z: {}".format(pos_ref.z))
+
+
+        # TODO: Test how it works :) 
         # Z - height
         # X - pitch
         # Y - roll||yaw
@@ -133,7 +169,9 @@ class hpe2uavcmd():
 
             # We can start control if we have calibrated point
             if run_ready and calibrated:
-                self.run_ctl()
+                r_ = 0.15
+                R_ = 0.5
+                self.run_ctl(r_, R_)
 
 
             self.rate.sleep()
