@@ -63,11 +63,11 @@ class HumanPose3D():
                               6:"r_shoulder", 7:"l_elbow", 8:"r_elbow", 9:"l_wrist", 10:"r_wrist", 
                               11:"l_hip", 12:"r_hip", 13:"l_knee", 14:"r_knee", 15:"l_ankle", 16:"r_ankle"}
 
-        self.body25_indexing =   {0 :"nose", 1 :"neck", 2:  "r_shoulder", 3:  "r_elbow", 
-                                  4: "r_wrist", 5: "l_shoulder", 6 : "l_elbow", 7:"l_wrist", 8: "midhip", 9: "r_hip",
-                                  10: "r_knee", 11:"r_ankle", 12:"l_hip", 13: "l_knee", 14: "l_ankle", 15: "r_eye", 16: "l_eye", 
-                                  17: "r_ear", 18:"l_ear", 19:"l_big_toe", 20:"l_small_toe", 21: "l_heel", 22: "r_big_toe", 23: "r_small_toe", 
-                                  24: "r_heel", 25: "background"}
+        self.body25_indexing = {0 :"nose", 1 :"neck", 2:  "r_shoulder", 3:  "r_elbow", 
+                                4: "r_wrist", 5: "l_shoulder", 6 : "l_elbow", 7:"l_wrist", 8: "midhip", 9: "r_hip",
+                                10: "r_knee", 11:"r_ankle", 12:"l_hip", 13: "l_knee", 14: "l_ankle", 15: "r_eye", 16: "l_eye", 
+                                17: "r_ear", 18:"l_ear", 19:"l_big_toe", 20:"l_small_toe", 21: "l_heel", 22: "r_big_toe", 23: "r_small_toe", 
+                                24: "r_heel", 25: "background"}
         
         self.mpii = False
 
@@ -123,12 +123,14 @@ class HumanPose3D():
         #keypoints = msg.data
         persons = msg.persons
         self.predictions = []
+        self.pose_predictions = []
 
         if self.openpose:
             for i, person in enumerate(persons): 
                 if i == 0: 
                     for bodypart in person.bodyParts: 
                         self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
+                        self.pose_predictions.append((bodypart.point.x, bodypart.point.y, bodypart.point.z))
             
             self.predictions = self.predictions[:18]
             self.pred_recv = True
