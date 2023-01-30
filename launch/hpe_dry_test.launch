@@ -1,0 +1,13 @@
+<launch>
+
+    <arg name="frequency" value="30"/>
+    <arg name="bag_path" value="/home/developer"/>
+    <arg name="bag_name" value="hpe.bag"/>
+
+    <!-- play rosbag containing extracted 3d pose of the body -->
+    <node pkg="rosbag" type="play" name="player" output="screen" args="--clock /$(arg bag_path)/$(arg bag_name)"/>
+    
+    <!-- Transform HPE to CMD -->
+    <node name="hpe_to_cmd_node" pkg="hpe_ros_package" type="hpe_to_arm_cmd.py" args="$(arg frequency)" output="screen" />
+
+</launch>
