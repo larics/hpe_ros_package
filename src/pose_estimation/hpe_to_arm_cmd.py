@@ -23,7 +23,7 @@ import sensor_msgs.point_cloud2 as pc2
 # - Read camera_info 
 # - add painting of a z measurements  
 
-class hpe2cmd(): 
+class hpe2armcmd():
 
     def __init__(self, freq):
 
@@ -250,5 +250,5 @@ def get_RotZ(angle):
 
 if __name__ == "__main__": 
 
-    hpe2cmd_ = hpe2cmd(sys.argv[1])
+    hpe2cmd_ = hpe2armcmd(sys.argv[1])
     hpe2cmd_.run()
