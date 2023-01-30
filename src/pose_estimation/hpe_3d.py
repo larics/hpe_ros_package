@@ -18,6 +18,10 @@ from hpe_ros_package.msg import TorsoJointPositions
 
 import sensor_msgs.point_cloud2 as pc2
 
+openpose = True
+if openpose: 
+    from ros_openpose.msg import Frame
+
 
 
 # TODO:
@@ -39,6 +43,13 @@ class HumanPose3D():
         self.pred_recv          = False
         self.cinfo_recv         = False 
 
+        # IF openpose: True, ELSE: False
+        self.openpose = True   
+
+        if self.openpose: 
+            self.body25 = True
+            self.coco = False
+
         # Initialize publishers and subscribers
         self._init_subscribers()
         self._init_publishers()
@@ -51,13 +62,19 @@ class HumanPose3D():
         self.coco_indexing = {0: "nose", 1:"l_eye", 2:"r_eye", 3:"l_ear", 4:"r_ear", 5:"l_shoulder", 
                               6:"r_shoulder", 7:"l_elbow", 8:"r_elbow", 9:"l_wrist", 10:"r_wrist", 
                               11:"l_hip", 12:"r_hip", 13:"l_knee", 14:"r_knee", 15:"l_ankle", 16:"r_ankle"}
+
+        self.body25_indexing =   {0 :"nose", 1 :"neck", 2:  "r_shoulder", 3:  "r_elbow", 
+                                  4: "r_wrist", 5: "l_shoulder", 6 : "l_elbow", 7:"l_wrist", 8: "midhip", 9: "r_hip",
+                                  10: "r_knee", 11:"r_ankle", 12:"l_hip", 13: "l_knee", 14: "l_ankle", 15: "r_eye", 16: "l_eye", 
+                                  17: "r_ear", 18:"l_ear", 19:"l_big_toe", 20:"l_small_toe", 21: "l_heel", 22: "r_big_toe", 23: "r_small_toe", 
+                                  24: "r_heel", 25: "background"}
         
-        self.coco = True
         self.mpii = False
+
         # self.indexing = different indexing depending on weights that are used!
         if self.mpii: self.indexing = self.mpii_indexing
-        if self.coco: self.indexing = self.coco_indexing
-
+        if self.coco: self.indexing = self.coco_indexing   
+        if self.body25: self.indexing = self.body25_indexing      
 
         self.camera_frame_name = "camera_color_frame"
         # Initialize transform broadcaster                  
@@ -71,12 +88,24 @@ class HumanPose3D():
         self.camera_sub         = rospy.Subscriber("camera/color/image_raw", Image, self.image_cb, queue_size=1)
         self.depth_sub          = rospy.Subscriber("camera/depth_registered/points", PointCloud2, self.pcl_cb, queue_size=1)
         self.depth_cinfo_sub    = rospy.Subscriber("camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
-        self.predictions_sub    = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
+       
+
+        if self.openpose: 
+            self.predictions_sub    = rospy.Subscriber("/frame", Frame, self.pred_cb, queue_size=1)
+        else: 
+            self.predictions_sub    = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
+        
+        rospy.loginfo("Initialized subscribers!")
+
+
+
 
     def _init_publishers(self): 
         self.left_wrist_pub     = rospy.Publisher("leftw_point", Vector3, queue_size=1)
         self.right_wrist_pub    = rospy.Publisher("rightw_point", Vector3, queue_size=1)
         self.upper_body_3d_pub  = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
+
+        rospy.loginfo("Initialized publishers!")
 
     def image_cb(self, msg): 
 
@@ -91,11 +120,22 @@ class HumanPose3D():
 
     def pred_cb(self, msg): 
 
-        keypoints = msg.data
-        # pair elements
-        self.predictions = [(int(keypoints[i]), int(keypoints[i + 1])) for i in range(0, len(keypoints), 2)]
-        self.pred_recv = True
+        #keypoints = msg.data
+        persons = msg.persons
+        self.predictions = []
 
+        if self.openpose:
+            for i, person in enumerate(persons): 
+                if i == 0: 
+                    for bodypart in person.bodyParts: 
+                        self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
+            
+            self.predictions = self.predictions[:18]
+            self.pred_recv = True
+        else: 
+            # pair elements
+            self.predictions = [(int(keypoints[i]), int(keypoints[i + 1])) for i in range(0, len(keypoints), 2)]
+            self.pred_recv = True
         # Cut predictions on upper body only 6+ --> don't cut predictions, performance speedup is not noticable
         # self.predictions = self.predictions[6:]
 
@@ -194,7 +234,7 @@ class HumanPose3D():
         msg.frame_id.data        = "camera_color_frame"
         try:
             # COCO doesn't have THORAX!
-            if self.coco: 
+            if self.coco or self.body25: 
                 thorax = Vector3((pos_named["l_shoulder"][0] + pos_named["r_shoulder"][0])/2, 
                                  (pos_named["l_shoulder"][1] + pos_named["r_shoulder"][1])/2, 
                                  (pos_named["l_shoulder"][2] + pos_named["r_shoulder"][2])/2)
@@ -208,7 +248,7 @@ class HumanPose3D():
             msg.left_wrist      = Vector3(pos_named["l_wrist"][0], pos_named["l_wrist"][1], pos_named["l_wrist"][2])
             msg.right_wrist     = Vector3(pos_named["r_wrist"][0], pos_named["r_wrist"][1], pos_named["r_wrist"][2])
             msg.success.data = True
-            rospy.logedebug("Created ROS msg!")
+            rospy.logdebug("Created ROS msg!")
         except Exception as e:
             msg.success.data = False 
             rospy.logwarn_throttle(2, "Create ROS msg failed: {}".format(e))

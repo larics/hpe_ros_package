@@ -2,8 +2,6 @@
 
 <arg name="frequency" value="30"/>
 <arg name="video_dev" value="/dev/video0"/>
-<arg name="mpii152" value="false"/>
-<arg name="coco152" value="true"/>
 <arg name="depth_cam" value="false"/>
 
 
@@ -22,8 +20,8 @@
 
 <!-- Realsense CAM is used - docker container -->
 
-<!-- HPE node -->
-<node name="hpe_simplebaselines_node" pkg="hpe_ros_package" type="hpe_ros_inference.py" args="--frequency $(arg frequency) --cfg $(arg config_file) --model-file $(arg model_path) --use-depth $(arg depth_cam)" output="screen"/>
+<!-- HPE node swapped with OpenPose -->
+
 
 <!-- Depth extraction node -->
 <node name="depth_extraction_node" pkg="hpe_ros_package" type="hpe_3d.py" args="$(arg frequency)" output="screen" />
