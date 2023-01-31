@@ -90,13 +90,19 @@ class hpe2armcmd():
 
     def publish_left_arm(self): 
 
-        armCmdMsg = ArmCmd()
-        armCmdMsg.header = rospy.Time.now().to_sec()
-        armCmdMsg.shoulder_pitch = self.lpitch_angle
-        armCmdMsg.shoulder_roll = self.lroll_angle
-        armCmdMsg.shoulder_yaw = self.lyaw_angle
-        armCmdMsg.elbow = self.lelbow
-        self.left_arm_pub.publish(armCmdMsg)
+        try: 
+
+            armCmdMsg = ArmCmd()
+            armCmdMsg.header.stamp.sec = self.hpe3d_recv_t.sec
+            armCmdMsg.header.stamp.nsec = self.hpe3d_recv_t.nsec
+            armCmdMsg.shoulder_pitch.data = float(self.lpitch_angle)
+            armCmdMsg.shoulder_roll.data = float(self.lroll_angle)
+            armCmdMsg.shoulder_yaw.data = float(self.lyaw_angle)
+            armCmdMsg.elbow.data = float(self.lelbow_angle)
+            self.left_arm_pub.publish(armCmdMsg)
+            
+        except Exception as e: 
+            rospy.logwarn("Exception encoutered {}".format(str(e)))
 
     def send_transform(self, p_vect, parent_frame, child_frame):
 
@@ -153,11 +159,12 @@ class hpe2armcmd():
         if self.p_shoulder_lelbow[1] > 0: 
             self.lroll_angle *= -1
 
-
-        rospy.logdebug("Shoulder roll angle: {}".format(self.roll_angle))
-        rospy.logdebug("Shoulder pitch angle: {}".format(self.pitch_angle))
-        rospy.logdebug("Shoulder yaw angle: {}".format(self.yaw_angle))
-        rospy.logdebug("Sholder elbow angle: {}".format(self.elbow_angle))
+        debug = False
+        if debug: 
+            rospy.logdebug("Shoulder roll angle: {}".format(self.lroll_angle))
+            rospy.logdebug("Shoulder pitch angle: {}".format(self.lpitch_angle))
+            rospy.logdebug("Shoulder yaw angle: {}".format(self.lyaw_angle))
+            rospy.logdebug("Sholder elbow angle: {}".format(self.lelbow_angle))
 
     def get_angle(self, vectI, plane="xy", rAxis = "x", format="degrees"): 
 

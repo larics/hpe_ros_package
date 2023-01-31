@@ -33,8 +33,9 @@ if openpose:
 class HumanPose3D(): 
 
     def __init__(self, freq):
-
-        rospy.init_node("hpe3d", log_level=rospy.DEBUG)
+        
+        # TODO: Add LOG_LEVEL as argument
+        rospy.init_node("hpe3d", log_level=rospy.INFO)
 
         self.rate = rospy.Rate(int(float(freq)))
 
@@ -56,8 +57,8 @@ class HumanPose3D():
 
         # MPII keypoint indexing
         self.mpii_indexing = {0:"r_ankle", 1:"r_knee", 2:"r_hip", 3:"l_hip", 4: "l_knee", 5: "l_ankle",
-                         6:"pelvis", 7:"thorax", 8:"upper_neck", 9:"head_top", 10:"r_wrist",
-                         11:"r_elbow", 12:"r_shoulder", 13:"l_shoulder", 14:"l_elbow", 15:"l_wrist"}
+                              6:"pelvis", 7:"thorax", 8:"upper_neck", 9:"head_top", 10:"r_wrist",
+                              11:"r_elbow", 12:"r_shoulder", 13:"l_shoulder", 14:"l_elbow", 15:"l_wrist"}
 
         self.coco_indexing = {0: "nose", 1:"l_eye", 2:"r_eye", 3:"l_ear", 4:"r_ear", 5:"l_shoulder", 
                               6:"r_shoulder", 7:"l_elbow", 8:"r_elbow", 9:"l_wrist", 10:"r_wrist", 
@@ -66,8 +67,8 @@ class HumanPose3D():
         self.body25_indexing = {0 :"nose", 1 :"neck", 2:  "r_shoulder", 3:  "r_elbow", 
                                 4: "r_wrist", 5: "l_shoulder", 6 : "l_elbow", 7:"l_wrist", 8: "midhip", 9: "r_hip",
                                 10: "r_knee", 11:"r_ankle", 12:"l_hip", 13: "l_knee", 14: "l_ankle", 15: "r_eye", 16: "l_eye", 
-                                17: "r_ear", 18:"l_ear", 19:"l_big_toe", 20:"l_small_toe", 21: "l_heel", 22: "r_big_toe", 23: "r_small_toe", 
-                                24: "r_heel", 25: "background"}
+                                17: "r_ear", 18:"l_ear", 19:"l_big_toe", 20:"l_small_toe", 21: "l_heel", 22: "r_big_toe",
+                                23: "r_small_toe", 24: "r_heel", 25: "background"}
         
         self.mpii = False
 
@@ -265,7 +266,7 @@ class HumanPose3D():
             run_ready = self.img_recv and self.cinfo_recv and self.pcl_recv and self.pred_recv
 
             if run_ready: 
-                rospy.loginfo("Publishing HPE3d!")
+                rospy.loginfo_throttle(10, "Publishing HPE3d!")
                 # Maybe save indices for easier debugging
                 start_time = rospy.Time.now().to_sec()
                 # Get X,Y,Z coordinates for predictions

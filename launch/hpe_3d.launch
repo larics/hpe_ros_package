@@ -4,30 +4,11 @@
 <arg name="video_dev" value="/dev/video0"/>
 <arg name="depth_cam" value="false"/>
 
-
-<!--group if="$(arg mpii152)">
-    <arg name="model_path" value="/home/developer/catkin_ws/src/hpe_ros_package/src/models/pose_resnet_152_384x384.pth.tar"/>
-    <arg name="config_file" value="/home/developer/catkin_ws/src/hpe_ros_package/src/experiments/mpii/resnet152/384x384_d256x3_adam_lr1e-3.yaml"/>
-</group-->
-
-
-<!--group if="$(arg coco152)"-->
-<arg name="model_path" value="/home/developer/catkin_ws/src/hpe_ros_package/src/models/pose_resnet_152_384x288.pth.tar"/>
-<arg name="config_file" value="/home/developer/catkin_ws/src/hpe_ros_package/src/experiments/coco/resnet152/384x288_d256x3_adam_lr1e-3.yaml"/>
-<!--/group-->
-    
-<!-- config files for each backbone model are located into experiments folder !-->
-
-<!-- Realsense CAM is used - docker container -->
-
-<!-- HPE node swapped with OpenPose -->
-
-
 <!-- Depth extraction node -->
 <node name="depth_extraction_node" pkg="hpe_ros_package" type="hpe_3d.py" args="$(arg frequency)" output="screen" />
 
 <!-- Transform HPE to ARM CMD -->
-<!--node name="hpe_to_cmd_node" pkg="hpe_ros_package" type="hpe_to_arm_cmd.py" args="$(arg frequency)" output="screen" /-->
+<node name="hpe_to_cmd_node" pkg="hpe_ros_package" type="hpe_to_arm_cmd.py" args="$(arg frequency)" output="screen" />
 
 <!-- Transform HPE to UAV CMD -->
 <!--node name="hpe_to_cmd_node" pkg="hpe_ros_package" type="hpe_to_uav_cmd.py" args="$(arg frequency)" output="screen"/-->
