@@ -14,7 +14,7 @@ from img_utils import convert_pil_to_ros_img
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from std_msgs.msg import Float64MultiArray, Float32
 from geometry_msgs.msg import Vector3
-from hpe_ros_package.msg import TorsoJointPositions
+from hpe_ros_package.msg import TorsoJointPositions, ArmCmd
 
 import sensor_msgs.point_cloud2 as pc2
 
@@ -60,10 +60,8 @@ class hpe2armcmd():
         # Publish array of messages
         # self.q_pos_cmd_pub = rospy.Publisher("")
         # TODO: Add publisher for publishing joint angles
-        self.shoulder_roll_angle_pub = rospy.Publisher("shoulder_roll", Float32, queue_size=1)
-        self.shoulder_pitch_angle_pub = rospy.Publisher("shoulder_pitch", Float32, queue_size=1)
-        self.shoulder_yaw_angle_pub = rospy.Publisher("shoulder_yaw", Float32, queue_size=1)
-        self.elbow_angle_pub = rospy.Publisher("elbow", Float32, queue_size=1)
+        self.left_arm_pub = rospy.Publisher("left_arm", ArmCmd)
+
 
     def hpe3d_cb(self, msg):
 
@@ -90,12 +88,15 @@ class hpe2armcmd():
         # recieved HPE 3D
         self.hpe3d_recv = True
 
-    def publish_arm_angles(self): 
+    def publish_left_arm(self): 
 
-        self.shoulder_roll_angle_pub.publish(self.roll_angle)
-        self.shoulder_pitch_angle_pub.publish(self.pitch_angle)
-        self.shoulder_yaw_angle_pub.publish(self.yaw_angle)
-        self.elbow_angle_pub.publish(self.elbow_angle)
+        armCmdMsg = ArmCmd()
+        armCmdMsg.header = rospy.Time.now().to_sec()
+        armCmdMsg.shoulder_pitch = self.lpitch_angle
+        armCmdMsg.shoulder_roll = self.lroll_angle
+        armCmdMsg.shoulder_yaw = self.lyaw_angle
+        armCmdMsg.elbow = self.lelbow
+        self.left_arm_pub.publish(armCmdMsg)
 
     def send_transform(self, p_vect, parent_frame, child_frame):
 
@@ -137,20 +138,20 @@ class hpe2armcmd():
 
         # Control of left arm 
         # 3 Shoulder angles --> check the left side :) 
-        self.roll_angle = self.get_angle(self.p_shoulder_lelbow, 'yz', 'z')  # anterior axis shoulder (xz)
-        self.pitch_angle = self.get_angle(self.p_shoulder_lelbow, 'xz', 'z') # mediolateral axis (yz) 
-        self.yaw_angle = self.get_angle(self.p_shoulder_lelbow, 'xy', 'x')  # longitudinal axis (xy)
-        self.elbow_angle = self.get_angle(self.p_elbow_lwrist, 'yz', 'z') #
+        self.lroll_angle = self.get_angle(self.p_shoulder_lelbow, 'yz', 'z')  # anterior axis shoulder (xz)
+        self.lpitch_angle = self.get_angle(self.p_shoulder_lelbow, 'xz', 'z') # mediolateral axis (yz) 
+        self.lyaw_angle = self.get_angle(self.p_shoulder_lelbow, 'xy', 'x')  # longitudinal axis (xy)
+        self.lelbow_angle = self.get_angle(self.p_elbow_lwrist, 'yz', 'z') #
 
         # Extract angle directions
         if self.p_shoulder_lelbow[0] < 0:
-            self.pitch_angle *= -1
+            self.lpitch_angle *= -1
         if self.p_elbow_lwrist[0] < 0: 
-            self.elbow_angle *= -1
+            self.lelbow_angle *= -1
         if self.p_shoulder_lelbow[1] < 0:
-            self.yaw_angle *= -1
+            self.lyaw_angle *= -1
         if self.p_shoulder_lelbow[1] > 0: 
-            self.roll_angle *= -1
+            self.lroll_angle *= -1
 
 
         rospy.logdebug("Shoulder roll angle: {}".format(self.roll_angle))
@@ -217,6 +218,7 @@ class hpe2armcmd():
                 # Get angles arm joint have
                 self.get_arm_angles()
                 self.send_arm_transforms()
+                self.publish_left_arm()
 
                 #self.publish_arm_angles()
                 

@@ -265,7 +265,7 @@ class HumanPose3D():
             run_ready = self.img_recv and self.cinfo_recv and self.pcl_recv and self.pred_recv
 
             if run_ready: 
-                
+                rospy.loginfo("Publishing HPE3d!")
                 # Maybe save indices for easier debugging
                 start_time = rospy.Time.now().to_sec()
                 # Get X,Y,Z coordinates for predictions

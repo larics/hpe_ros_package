@@ -30,6 +30,6 @@
 <!--node name="hpe_to_cmd_node" pkg="hpe_ros_package" type="hpe_to_arm_cmd.py" args="$(arg frequency)" output="screen" /-->
 
 <!-- Transform HPE to UAV CMD -->
-<node name="hpe_to_cmd_node" pkg="hpe_ros_package" type="hpe_to_uav_cmd.py" args="$(arg frequency)" output="screen"/>
+<!--node name="hpe_to_cmd_node" pkg="hpe_ros_package" type="hpe_to_uav_cmd.py" args="$(arg frequency)" output="screen"/-->
 
 </launch>
