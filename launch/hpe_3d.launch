@@ -1,10 +1,9 @@
 <launch>
 
-<arg name="frequency" value="30"/>
-<arg name="video_dev" value="/dev/video0"/>
+<arg name="frequency" value="20"/>
 <arg name="depth_cam" value="false"/>
 
-<!-- Depth extraction node -->
+<!-- Depth extraction node --> <!-- maybe not neccessary if using OpenPose -->
 <node name="depth_extraction_node" pkg="hpe_ros_package" type="hpe_3d.py" args="$(arg frequency)" output="screen" />
 
 <!-- Transform HPE to ARM CMD -->

@@ -5,6 +5,7 @@ import sys
 
 import rospy
 import tf
+import copy
 import numpy as np
 
 from PIL import ImageDraw, ImageFont
@@ -161,14 +162,21 @@ class hpe2armcmd():
             rospy.logwarn("Sending arm transforms failed: {}".format(str(e)))
 
 
-    def get_arm_angles(self): 
+    def get_arm_angles(self, p_shoulder_lelbow, p_elbow_lwrist): 
+        
 
         # Control of left arm 
         # 3 Shoulder angles --> check the left side :) 
-        self.lroll_angle = self.get_angle(self.p_shoulder_lelbow, 'yz', 'z')  # anterior axis shoulder (xz)
-        self.lpitch_angle = self.get_angle(self.p_shoulder_lelbow, 'xz', 'z') # mediolateral axis (yz) 
-        self.lyaw_angle = self.get_angle(self.p_shoulder_lelbow, 'xy', 'x')   # longitudinal axis (xy)
-        self.lelbow_angle = self.get_angle(self.p_elbow_lwrist, 'yz', 'z')    # elbow rotational axis
+        self.lpitch_angle = self.get_angle(p_shoulder_lelbow, 'xz', 'z') # mediolateral axis (yz) -> PITCH
+        
+        RYinv = get_RotY(self.lpitch_angle, "deg").T # Calculate RPitch
+        p_shoulder_lelbow = RYinv.dot(p_shoulder_lelbow) # Remove RPitch
+        self.lroll_angle = self.get_angle(p_shoulder_lelbow, 'yz', 'z')  # anterior axis shoulder (xz)
+        self.lyaw_angle = self.get_angle(p_elbow_lwrist, 'xy', 'x')   # longitudinal axis (xy)
+        
+        RZinv = get_RotZ(self.lyaw_angle, "deg").T
+        p_elbow_lwrist = RZinv.dot(p_elbow_lwrist)
+        self.lelbow_angle = self.get_angle(p_elbow_lwrist, 'yz', 'z')    # elbow rotational axis
 
         #self.rroll_angle = self.get_angle(self.p_shoulder_relbow, '')
         #self.rpitch_angle = self.get_angle(self.p_shoulder_relbow, '')
@@ -176,13 +184,13 @@ class hpe2armcmd():
         #self.relbow_angle = self.get_angle(self.p_shoulder_relbow, '')
 
         # Extract angle directions
-        if self.p_shoulder_lelbow[0] < 0:
+        if p_shoulder_lelbow[0] < 0:
             self.lpitch_angle *= -1
-        if self.p_elbow_lwrist[0] < 0: 
+        if p_elbow_lwrist[0] < 0: 
             self.lelbow_angle *= -1
-        if self.p_shoulder_lelbow[1] < 0:
+        if p_shoulder_lelbow[1] < 0:
             self.lyaw_angle *= -1
-        if self.p_shoulder_lelbow[1] > 0: 
+        if p_shoulder_lelbow[1] > 0: 
             self.lroll_angle *= -1
 
 
@@ -247,7 +255,8 @@ class hpe2armcmd():
                 # Maybe save indices for easier debugging
                 start_time = rospy.Time.now().to_sec()
                 # Get angles arm joint have
-                self.get_arm_angles()
+                self.get_arm_angles(copy.deepcopy(self.p_shoulder_lelbow),
+                                    copy.deepcopy(self.p_elbow_lwrist))
                 self.send_arm_transforms()
                 self.publish_left_arm()
 
@@ -262,6 +271,37 @@ class hpe2armcmd():
                 self.debug_print()
                 
             self.rate.sleep()
+
+
+def get_RotX(angle, format_): 
+    
+    if format_ == "deg":
+        angle = np.radians(angle)
+    RX = np.array([[1, 0, 0], 
+                   [0, np.cos(angle), -np.sin(angle)], 
+                   [0, np.sin(angle), np.cos(angle)]])
+    
+    return RX
+
+def get_RotY(angle, format_): 
+    
+    if format_ == "deg":
+        angle = np.radians(angle)
+    RY = np.array([[np.cos(angle), 0, np.sin(angle)], 
+                   [0, 1, 0], 
+                   [-np.sin(angle), 0, np.cos(angle)]])
+    return RY
+    
+def get_RotZ(angle, format_): 
+    
+    if format_ == "deg":
+        angle = np.radians(angle)
+    RZ = np.array([[np.cos(angle), -np.sin(angle), 0],
+                   [np.sin(angle), np.cos(angle), 0], 
+                   [ 0, 0, 1]] )
+    
+    return RZ
+
 
 
 if __name__ == "__main__": 
