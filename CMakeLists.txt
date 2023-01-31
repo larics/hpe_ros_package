@@ -1,9 +1,6 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(hpe_ros_package)
 
-# This changes over time. 
-set(Torch_DIR "/opt/conda/lib/python3.8/site-packages/torch/share/cmake/Torch/")
-
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 add_compile_options(-std=c++11)
@@ -18,8 +15,6 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   message_generation
 )
-find_package(Torch REQUIRED)
-find_package(OpenCV REQUIRED)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
