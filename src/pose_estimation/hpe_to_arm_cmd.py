@@ -50,10 +50,12 @@ class hpe2armcmd():
 
         rospy.loginfo("[Hpe3D] started!")
 
+
     def _init_subscribers(self):
 
         #self.hpe_3d_sub         = rospy.Subscriber("camera/color/image_raw", Image, self.hpe3d_cb, queue_size=1)
         self.hpe_3d_sub = rospy.Subscriber("upper_body_3d", TorsoJointPositions, self.hpe3d_cb, queue_size=1)
+
 
     def _init_publishers(self): 
 
@@ -61,17 +63,19 @@ class hpe2armcmd():
         # self.q_pos_cmd_pub = rospy.Publisher("")
         # TODO: Add publisher for publishing joint angles
         self.left_arm_pub = rospy.Publisher("left_arm", ArmCmd)
+        self.right_arm_pub = rospy.Publisher("right_arm", ArmCmd)
 
 
     def hpe3d_cb(self, msg):
 
         # Msg has header, use it for timestamping 
         self.hpe3d_recv_t = msg.header.stamp # -> to system time 
-        # Extract data --> Fix pBaseNeck
-        self.p_base_thorax  = self.createPvect(msg.thorax)         # could be camera_link_frame - thorax
+        self.p_base_thorax  = self.createPvect(msg.thorax)        
+        # Left arm
         self.p_base_lshoulder = self.createPvect(msg.left_shoulder) 
         self.p_base_lelbow = self.createPvect(msg.left_elbow)
         self.p_base_lwrist = self.createPvect(msg.left_wrist)
+        # Right arm
         self.p_base_rshoulder = self.createPvect(msg.right_shoulder)
         self.p_base_relbow = self.createPvect(msg.right_elbow)
         self.p_base_rwrist = self.createPvect(msg.right_wrist)
@@ -88,13 +92,12 @@ class hpe2armcmd():
         # recieved HPE 3D
         self.hpe3d_recv = True
 
+
     def publish_left_arm(self): 
 
         try: 
-
             armCmdMsg = ArmCmd()
-            armCmdMsg.header.stamp.sec = self.hpe3d_recv_t.sec
-            armCmdMsg.header.stamp.nsec = self.hpe3d_recv_t.nsec
+            armCmdMsg.header.stamp = rospy.Time().now()
             armCmdMsg.shoulder_pitch.data = float(self.lpitch_angle)
             armCmdMsg.shoulder_roll.data = float(self.lroll_angle)
             armCmdMsg.shoulder_yaw.data = float(self.lyaw_angle)
@@ -102,7 +105,23 @@ class hpe2armcmd():
             self.left_arm_pub.publish(armCmdMsg)
             
         except Exception as e: 
-            rospy.logwarn("Exception encoutered {}".format(str(e)))
+            rospy.logwarn("[LeftArmMsg] Exception encoutered {}".format(str(e)))
+
+
+    def publish_right_arm(self): 
+
+        try: 
+            armCmdMsg = ArmCmd()
+            armCmdMsg.header.stamp = rospy.Time().now()
+            armCmdMsg.shoulder_pitch.data = float(self.rpitch_angle)
+            armCmdMsg.shoulder_roll.data = float(self.rroll_angle)
+            armCmdMsg.shoulder_yaw.data = float(self.ryaw_angle)
+            armCmdMsg.elbow.data = float(self.relbow_angle)
+            self.right_arm_pub.publish(armCmdMsg)
+
+        except Exception as e: 
+            rospy.logwarn("[RightArmMsg] Exception encountered: {}".format(str(e)))
+
 
     def send_transform(self, p_vect, parent_frame, child_frame):
 
@@ -115,6 +134,7 @@ class hpe2armcmd():
                                   rospy.Time.now(), 
                                   child_frame, 
                                   parent_frame)
+
 
     def send_arm_transforms(self): 
 
@@ -140,14 +160,20 @@ class hpe2armcmd():
         except Exception as e: 
             rospy.logwarn("Sending arm transforms failed: {}".format(str(e)))
 
+
     def get_arm_angles(self): 
 
         # Control of left arm 
         # 3 Shoulder angles --> check the left side :) 
         self.lroll_angle = self.get_angle(self.p_shoulder_lelbow, 'yz', 'z')  # anterior axis shoulder (xz)
         self.lpitch_angle = self.get_angle(self.p_shoulder_lelbow, 'xz', 'z') # mediolateral axis (yz) 
-        self.lyaw_angle = self.get_angle(self.p_shoulder_lelbow, 'xy', 'x')  # longitudinal axis (xy)
-        self.lelbow_angle = self.get_angle(self.p_elbow_lwrist, 'yz', 'z') #
+        self.lyaw_angle = self.get_angle(self.p_shoulder_lelbow, 'xy', 'x')   # longitudinal axis (xy)
+        self.lelbow_angle = self.get_angle(self.p_elbow_lwrist, 'yz', 'z')    # elbow rotational axis
+
+        #self.rroll_angle = self.get_angle(self.p_shoulder_relbow, '')
+        #self.rpitch_angle = self.get_angle(self.p_shoulder_relbow, '')
+        #self.lyaw_angle = self.get_angle(self.p_shoulder_relbow, '')
+        #self.relbow_angle = self.get_angle(self.p_shoulder_relbow, '')
 
         # Extract angle directions
         if self.p_shoulder_lelbow[0] < 0:
@@ -159,12 +185,6 @@ class hpe2armcmd():
         if self.p_shoulder_lelbow[1] > 0: 
             self.lroll_angle *= -1
 
-        debug = False
-        if debug: 
-            rospy.logdebug("Shoulder roll angle: {}".format(self.lroll_angle))
-            rospy.logdebug("Shoulder pitch angle: {}".format(self.lpitch_angle))
-            rospy.logdebug("Shoulder yaw angle: {}".format(self.lyaw_angle))
-            rospy.logdebug("Sholder elbow angle: {}".format(self.lelbow_angle))
 
     def get_angle(self, vectI, plane="xy", rAxis = "x", format="degrees"): 
 
@@ -190,9 +210,11 @@ class hpe2armcmd():
 
         return angle
 
+
     def createPvect(self, msg): 
         # Create position vector from Vector3
         return np.array([msg.x, msg.y, msg.z])
+
 
     def getOrthogonalVect(self, vect, plane="xy"): 
 
@@ -207,10 +229,12 @@ class hpe2armcmd():
         
         return vect_
 
+
     def debug_print(self): 
 
         if not self.hpe3d_recv:
             rospy.logwarn_throttle(1, "Human pose estimation from camera stream has not been recieved.")
+
 
     def run(self): 
 
@@ -238,31 +262,6 @@ class hpe2armcmd():
                 self.debug_print()
                 
             self.rate.sleep()
-
-
-def get_RotX(angle): 
-    
-    RX = np.array([[1, 0, 0], 
-                   [0, np.cos(angle), -np.sin(angle)], 
-                   [0, np.sin(angle), np.cos(angle)]])
-    
-    return RX
-
-def get_RotY(angle): 
-    
-    RY = np.array([[np.cos(angle), 0, np.sin(angle)], 
-                   [0, 1, 0], 
-                   [-np.sin(angle), 0, np.cos(angle)]])
-    return RY
-    
-def get_RotZ(angle): 
-    
-    RZ = np.array([[np.cos(angle), -np.sin(angle), 0],
-                   [np.sin(angle), np.cos(angle), 0], 
-                   [ 0, 0, 1]] )
-    
-    return RZ
-
 
 
 if __name__ == "__main__": 
