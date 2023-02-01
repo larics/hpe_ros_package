@@ -162,7 +162,9 @@ class hpe2armcmd():
             rospy.logwarn("Sending arm transforms failed: {}".format(str(e)))
 
 
-    def get_arm_angles(self, p_shoulder_lelbow, p_elbow_lwrist): 
+    def get_larm_angles(self, p_shoulder_lelbow, p_elbow_lwrist): 
+        # No delay filtering 
+        # https://www.planetanalog.com/five-things-to-know-about-prediction-and-negative-delay-filters/
         
 
         # Control of left arm 
@@ -186,6 +188,14 @@ class hpe2armcmd():
             self.lyaw_angle *= -1
         if p_shoulder_lelbow[1] > 0: 
             self.lroll_angle *= -1
+
+    
+    def get_rarm_angles(self, p_shoulder_relbow, p_elbow_rwrist): 
+        # 
+        self.rpitch_angle = self.get_angle(p_shoulder_relbow, 'xz', 'z')
+        self.rroll_angle = self.get_angle(p_shoulder_relbow, 'yz', 'z')
+        self.ryaw_angle = self.get_angle(p_elbow_rwrist, 'xy', 'x')
+        self.relbow_angle = self.get_angle(p_elbow_rwrist, 'yz', 'z')
 
 
     def get_angle(self, p, plane="xy", rAxis = "x", format="degrees"): 
@@ -265,8 +275,12 @@ class hpe2armcmd():
                 # Maybe save indices for easier debugging
                 start_time = rospy.Time.now().to_sec()
                 # Get angles arm joint have
-                self.get_arm_angles(copy.deepcopy(self.p_shoulder_lelbow),
+                self.get_larm_angles(copy.deepcopy(self.p_shoulder_lelbow),
                                     copy.deepcopy(self.p_elbow_lwrist))
+                                    
+                self.get_rarm_angles(copy.deepcopy(self.p_shoulder_relbow), 
+                                    copy.deepcopy(self.p_elbow_rwrist))
+
                 self.send_arm_transforms()
                 self.publish_left_arm()
 
