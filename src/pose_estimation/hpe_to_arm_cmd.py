@@ -168,14 +168,8 @@ class hpe2armcmd():
         # Control of left arm 
         # 3 Shoulder angles --> check the left side :) 
         self.lpitch_angle = self.get_angle(p_shoulder_lelbow, 'xz', 'z') # mediolateral axis (yz) -> PITCH
-        
-        RYinv = get_RotY(self.lpitch_angle, "deg").T # Calculate RPitch
-        p_shoulder_lelbow = RYinv.dot(p_shoulder_lelbow) # Remove RPitch
         self.lroll_angle = self.get_angle(p_shoulder_lelbow, 'yz', 'z')  # anterior axis shoulder (xz)
         self.lyaw_angle = self.get_angle(p_elbow_lwrist, 'xy', 'x')   # longitudinal axis (xy)
-        
-        RZinv = get_RotZ(self.lyaw_angle, "deg").T
-        p_elbow_lwrist = RZinv.dot(p_elbow_lwrist)
         self.lelbow_angle = self.get_angle(p_elbow_lwrist, 'yz', 'z')    # elbow rotational axis
 
         #self.rroll_angle = self.get_angle(self.p_shoulder_relbow, '')
@@ -194,12 +188,11 @@ class hpe2armcmd():
             self.lroll_angle *= -1
 
 
-    def get_angle(self, vectI, plane="xy", rAxis = "x", format="degrees"): 
+    def get_angle(self, p, plane="xy", rAxis = "x", format="degrees"): 
 
         # theta = cos-1 [ (a * b) / (abs(a) abs(b)) ]
         # Orthogonal projection of the vector to the wanted plane
-        vectPlane = self.getOrthogonalVect(vectI, plane)
-        # Angle between orthogonal projection of the vector and the 
+        proj_p = self.getOrthogonalProjection(p, plane)
 
         if rAxis == "x": 
             vectBase = self.unit_x
@@ -210,7 +203,7 @@ class hpe2armcmd():
 
         # All angles have 270deg offset -> radians      
         # TODO: Check if this is norm or absolute value
-        value = np.dot(vectPlane, vectBase)/(np.linalg.norm(vectPlane))
+        value = np.dot(proj_p, vectBase)/(np.linalg.norm(proj_p))
         angle = np.arccos(value)
 
         if format == "degrees": 
@@ -222,6 +215,23 @@ class hpe2armcmd():
     def createPvect(self, msg): 
         # Create position vector from Vector3
         return np.array([msg.x, msg.y, msg.z])
+
+
+    def getOrthogonalProjection(self, x, plane): 
+
+        if plane == "xy": 
+            # Matrix is defined as a span of two vectors
+            M = np.array([[1, 0], [0, 1], [0, 0]])
+        if plane == "xz": 
+            M = np.array([[1, 0], [0, 0], [0, 1]])
+        if plane == "yz": 
+            M = np.array([[0, 0], [-1, 0], [0, 1]])    
+
+        Minv = np.linalg.inv(np.matmul(M.T, M))
+        MTx = np.matmul(M.T, x)
+        proj_x = np.matmul(np.matmul(M, Minv), MTx)
+
+        return proj_x
 
 
     def getOrthogonalVect(self, vect, plane="xy"): 
