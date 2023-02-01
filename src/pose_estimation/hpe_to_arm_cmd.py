@@ -44,6 +44,10 @@ class hpe2armcmd():
         self.unit_y = np.array([0, 1, 0])
         self.unit_z = np.array([0, 0, 1])
 
+        self.m_dict = {"shoulder_rpitch": [], "shoulder_rroll": [], "shoulder_ryaw": [], 
+                       "shoulder_lpitch": [], "shoulder_lroll": [], "shoulder_lyaw": []
+                       "relbow": [], "lelbow": []}
+
         self.camera_frame_name = "camera_color_frame"
         # Initialize transform listener                  
         self.tf_br = tf.TransformListener()
@@ -169,10 +173,12 @@ class hpe2armcmd():
 
         # Control of left arm 
         # 3 Shoulder angles --> check the left side :) 
-        self.lpitch_angle = self.get_angle(p_shoulder_lelbow, 'xz', 'z') # mediolateral axis (yz) -> PITCH
-        self.lroll_angle = self.get_angle(p_shoulder_lelbow, 'yz', 'z')  # anterior axis shoulder (xz)
-        self.lyaw_angle = self.get_angle(p_elbow_lwrist, 'xy', 'x')   # longitudinal axis (xy)
-        self.lelbow_angle = self.get_angle(p_elbow_lwrist, 'yz', 'z')    # elbow rotational axis
+        self.lpitch_angle = self.get_angle(p_shoulder_lelbow, 'xz', 'z')    # mediolateral axis (yz) -> PITCH
+        self.lroll_angle = self.get_angle(p_shoulder_lelbow, 'yz', 'z')     # anterior axis shoulder (xz)
+        self.lyaw_angle = self.get_angle(p_elbow_lwrist, 'xy', 'x')         # longitudinal axis (xy)
+        self.lelbow_angle = self.get_angle(p_elbow_lwrist, 'yz', 'z')       # elbow rotational axis
+
+        
 
         #self.rroll_angle = self.get_angle(self.p_shoulder_relbow, '')
         #self.rpitch_angle = self.get_angle(self.p_shoulder_relbow, '')
@@ -191,11 +197,24 @@ class hpe2armcmd():
 
     
     def get_rarm_angles(self, p_shoulder_relbow, p_elbow_rwrist): 
+        
         # 
         self.rpitch_angle = self.get_angle(p_shoulder_relbow, 'xz', 'z')
         self.rroll_angle = self.get_angle(p_shoulder_relbow, 'yz', 'z')
         self.ryaw_angle = self.get_angle(p_elbow_rwrist, 'xy', 'x')
         self.relbow_angle = self.get_angle(p_elbow_rwrist, 'yz', 'z')
+
+
+    def m_avg_filter(self, measurement, window_size, var_name):
+
+        self.m_dict["{}".format(var_name)] = self.m_dict["{}".format(var_name)][-window_size:].append(measurement)
+
+        if len(self.m_dict["{}"]) < window_size: 
+            return measurement
+        else: 
+            return sum(self.m_dict["{}".format(var_name)])/len(self.m_dict["{}".format(var_name)])
+
+
 
 
     def get_angle(self, p, plane="xy", rAxis = "x", format="degrees"): 
@@ -276,12 +295,21 @@ class hpe2armcmd():
                 start_time = rospy.Time.now().to_sec()
                 # Get angles arm joint have
                 self.get_larm_angles(copy.deepcopy(self.p_shoulder_lelbow),
-                                    copy.deepcopy(self.p_elbow_lwrist))
+                                     copy.deepcopy(self.p_elbow_lwrist))
                                     
                 self.get_rarm_angles(copy.deepcopy(self.p_shoulder_relbow), 
-                                    copy.deepcopy(self.p_elbow_rwrist))
+                                     copy.deepcopy(self.p_elbow_rwrist))
 
+                # Send transforms
                 self.send_arm_transforms()
+
+                filtering = True; window_size = 5; 
+                if filtering:
+                    self.lroll_angle = self.m_avg_filter(self.lroll_angle, window_size, "shoulder_lroll")
+                    self.lpitch_angle = self.m_avg_filter(self.lpitch_angle, window_size, "shoulder_lpitch")
+                    self.lyaw_angle = self.m_avg_filter(self.lyaw_angle, window_size, "shoulder_lyaw")
+                    self.leblow_angle = self.m_avg_filter(self.lelbow_angle, window_size, "lelbow")
+
                 self.publish_left_arm()
 
                 #self.publish_arm_angles()
