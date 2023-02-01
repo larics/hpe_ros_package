@@ -1,6 +1,6 @@
 <launch>
 
-<arg name="frequency" value="20"/>
+<arg name="frequency" value="7"/>
 <arg name="depth_cam" value="false"/>
 
 <!-- Depth extraction node --> <!-- maybe not neccessary if using OpenPose -->

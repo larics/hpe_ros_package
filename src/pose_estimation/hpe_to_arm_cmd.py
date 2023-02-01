@@ -45,7 +45,7 @@ class hpe2armcmd():
         self.unit_z = np.array([0, 0, 1])
 
         self.m_dict = {"shoulder_rpitch": [], "shoulder_rroll": [], "shoulder_ryaw": [], 
-                       "shoulder_lpitch": [], "shoulder_lroll": [], "shoulder_lyaw": []
+                       "shoulder_lpitch": [], "shoulder_lroll": [], "shoulder_lyaw": [], 
                        "relbow": [], "lelbow": []}
 
         self.camera_frame_name = "camera_color_frame"
@@ -207,11 +207,14 @@ class hpe2armcmd():
 
     def m_avg_filter(self, measurement, window_size, var_name):
 
-        self.m_dict["{}".format(var_name)] = self.m_dict["{}".format(var_name)][-window_size:].append(measurement)
+        self.m_dict["{}".format(var_name)].append(measurement)
 
-        if len(self.m_dict["{}"]) < window_size: 
+        rospy.logdebug("{}: {}".format(var_name, self.m_dict["{}".format(var_name)]))
+        
+        if len(self.m_dict["{}".format(var_name)]) < window_size: 
             return measurement
         else: 
+            self.m_dict["{}".format(var_name)] = self.m_dict["{}".format(var_name)][-window_size:]
             return sum(self.m_dict["{}".format(var_name)])/len(self.m_dict["{}".format(var_name)])
 
 
@@ -237,8 +240,10 @@ class hpe2armcmd():
 
         if format == "degrees": 
             angle = np.degrees(angle)
+        
+        num_decimals = 4
 
-        return angle
+        return np.round(angle, num_decimals)
 
 
     def createPvect(self, msg): 
@@ -305,10 +310,11 @@ class hpe2armcmd():
 
                 filtering = True; window_size = 5; 
                 if filtering:
-                    self.lroll_angle = self.m_avg_filter(self.lroll_angle, window_size, "shoulder_lroll")
-                    self.lpitch_angle = self.m_avg_filter(self.lpitch_angle, window_size, "shoulder_lpitch")
-                    self.lyaw_angle = self.m_avg_filter(self.lyaw_angle, window_size, "shoulder_lyaw")
-                    self.leblow_angle = self.m_avg_filter(self.lelbow_angle, window_size, "lelbow")
+                    # Overusage of copy.deepcopy (bad usage of the class and variable definitions -> HACKING!)
+                    self.lroll_angle = self.m_avg_filter(copy.deepcopy(self.lroll_angle), window_size, "shoulder_lroll")
+                    self.lpitch_angle = self.m_avg_filter(copy.deepcopy(self.lpitch_angle), window_size, "shoulder_lpitch")
+                    self.lyaw_angle = self.m_avg_filter(copy.deepcopy(self.lyaw_angle), window_size, "shoulder_lyaw")
+                    self.leblow_angle = self.m_avg_filter(copy.deepcopy(self.lelbow_angle), window_size, "lelbow")
 
                 self.publish_left_arm()
 
