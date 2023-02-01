@@ -15,7 +15,7 @@ from img_utils import convert_pil_to_ros_img
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from std_msgs.msg import Float64MultiArray, Float32
 from geometry_msgs.msg import Vector3
-from hpe_ros_package.msg import TorsoJointPositions, ArmCmd
+from hpe_ros_msgs.msg import TorsoJointPositions, ArmCmd
 
 import sensor_msgs.point_cloud2 as pc2
 
@@ -323,37 +323,6 @@ class hpe2armcmd():
                 self.debug_print()
                 
             self.rate.sleep()
-
-
-def get_RotX(angle, format_): 
-    
-    if format_ == "deg":
-        angle = np.radians(angle)
-    RX = np.array([[1, 0, 0], 
-                   [0, np.cos(angle), -np.sin(angle)], 
-                   [0, np.sin(angle), np.cos(angle)]])
-    
-    return RX
-
-def get_RotY(angle, format_): 
-    
-    if format_ == "deg":
-        angle = np.radians(angle)
-    RY = np.array([[np.cos(angle), 0, np.sin(angle)], 
-                   [0, 1, 0], 
-                   [-np.sin(angle), 0, np.cos(angle)]])
-    return RY
-    
-def get_RotZ(angle, format_): 
-    
-    if format_ == "deg":
-        angle = np.radians(angle)
-    RZ = np.array([[np.cos(angle), -np.sin(angle), 0],
-                   [np.sin(angle), np.cos(angle), 0], 
-                   [ 0, 0, 1]] )
-    
-    return RZ
-
 
 
 if __name__ == "__main__": 

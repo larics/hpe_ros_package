@@ -13,18 +13,12 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   sensor_msgs
+  hpe_ros_msgs
   message_generation
 )
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
-
-
-add_message_files(
-  FILES
-  TorsoJointPositions.msg
-  ArmCmd.msg
-)
 
 generate_messages(
   DEPENDENCIES
