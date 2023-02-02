@@ -15,7 +15,7 @@ from img_utils import convert_pil_to_ros_img
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from std_msgs.msg import Float64MultiArray, Float32
 from geometry_msgs.msg import Vector3
-from hpe_ros_msgs.msg import TorsoJointPositions, ArmCmd
+from hpe_ros_msgs.msg import TorsoJointPositions, JointArmCmd, CartesianArmCmd
 
 import sensor_msgs.point_cloud2 as pc2
 
@@ -67,8 +67,18 @@ class hpe2armcmd():
         # Publish array of messages
         # self.q_pos_cmd_pub = rospy.Publisher("")
         # TODO: Add publisher for publishing joint angles
-        self.left_arm_pub = rospy.Publisher("left_arm", ArmCmd)
-        self.right_arm_pub = rospy.Publisher("right_arm", ArmCmd)
+        self.left_arm_pub = rospy.Publisher("left_arm", JointArmCmd)
+        self.right_arm_pub = rospy.Publisher("right_arm", JointArmCmd)
+        self.cleft_arm_pub = rospy.Publisher("cart_left_arm", CartesianArmCmd)
+        self.cright_arm_pub = rospy.Publisher("cart_right_arm", CartesianArmCmd)
+
+    def arrayToVect(self, array): 
+
+        v = Vector3()
+        v.x = array[0]
+        v.y = array[1]
+        v.z = array[2]
+        return v
 
 
     def hpe3d_cb(self, msg):
@@ -100,29 +110,44 @@ class hpe2armcmd():
 
     def publish_left_arm(self): 
 
-        try: 
-            armCmdMsg = ArmCmd()
+        try:
+            # Joint space
+            armCmdMsg = JointArmCmd()
             armCmdMsg.header.stamp = rospy.Time().now()
-            armCmdMsg.shoulder_pitch.data = float(self.lpitch_angle)
-            armCmdMsg.shoulder_roll.data = float(self.lroll_angle)
-            armCmdMsg.shoulder_yaw.data = float(self.lyaw_angle)
-            armCmdMsg.elbow.data = float(self.lelbow_angle)
+            armCmdMsg.shoulder_pitch.data = float(self.lpitch)
+            armCmdMsg.shoulder_roll.data = float(self.lroll)
+            armCmdMsg.shoulder_yaw.data = float(self.lyaw)
+            armCmdMsg.elbow.data = float(self.lelbow)
             self.left_arm_pub.publish(armCmdMsg)
+            # Cartesian space
+            cartArmCmdMsg = CartesianArmCmd()
+            cartArmCmdMsg.header.stamp = rospy.Time().now()
+            cartArmCmdMsg.positionEE = self.arrayToVect(-1 * self.p_base_lwrist)
+            cartArmCmdMsg.velocityEE = self.arrayToVect(self.v_base_lwrist)
+            self.cleft_arm_pub.publish(cartArmCmdMsg)
+
             
         except Exception as e: 
             rospy.logwarn("[LeftArmMsg] Exception encoutered {}".format(str(e)))
 
 
+
     def publish_right_arm(self): 
 
         try: 
-            armCmdMsg = ArmCmd()
+            # Joint space
+            armCmdMsg = JointArmCmd()
             armCmdMsg.header.stamp = rospy.Time().now()
-            armCmdMsg.shoulder_pitch.data = float(self.rpitch_angle)
-            armCmdMsg.shoulder_roll.data = float(self.rroll_angle)
-            armCmdMsg.shoulder_yaw.data = float(self.ryaw_angle)
-            armCmdMsg.elbow.data = float(self.relbow_angle)
+            armCmdMsg.shoulder_pitch.data = float(self.rpitch)
+            armCmdMsg.shoulder_roll.data = float(self.rroll)
+            armCmdMsg.shoulder_yaw.data = float(self.ryaw)
+            armCmdMsg.elbow.data = float(self.relbow)
             self.right_arm_pub.publish(armCmdMsg)
+            cartArmCmdMsg = CartesianArmCmd()
+            cartArmCmdMsg.header.stamp = rospy.Time().now()
+            cartArmCmdMsg.positionEE = self.arrayToVect(-1 * self.p_base_rwrist)
+            cartArmCmdMsg.velocityEE = self.arrayToVect(self.v_base_rwrist)
+            self.cright_arm_pub.publish(cartArmCmdMsg)
 
         except Exception as e: 
             rospy.logwarn("[RightArmMsg] Exception encountered: {}".format(str(e)))
@@ -171,41 +196,66 @@ class hpe2armcmd():
         # https://www.planetanalog.com/five-things-to-know-about-prediction-and-negative-delay-filters/
         
 
-        # Control of left arm 
-        # 3 Shoulder angles --> check the left side :) 
-        self.lpitch_angle = self.get_angle(p_shoulder_lelbow, 'xz', 'z')    # mediolateral axis (yz) -> PITCH
-        self.lroll_angle = self.get_angle(p_shoulder_lelbow, 'yz', 'z')     # anterior axis shoulder (xz)
-        self.lyaw_angle = self.get_angle(p_elbow_lwrist, 'xy', 'x')         # longitudinal axis (xy)
-        self.lelbow_angle = self.get_angle(p_elbow_lwrist, 'yz', 'z')       # elbow rotational axis
+        self.lpitch = self.get_angle(p_shoulder_lelbow, 'xz', 'z')    # mediolateral axis (yz) 
+        self.lroll = self.get_angle(p_shoulder_lelbow, 'yz', 'z')     # anterior axis shoulder (xz)
+        self.lyaw = self.get_angle(p_elbow_lwrist, 'xy', 'x')         # longitudinal axis (xy)
+        self.lelbow = self.get_angle(p_elbow_lwrist, 'yz', 'z')       # elbow rotational axis
 
-        
-
-        #self.rroll_angle = self.get_angle(self.p_shoulder_relbow, '')
-        #self.rpitch_angle = self.get_angle(self.p_shoulder_relbow, '')
-        #self.lyaw_angle = self.get_angle(self.p_shoulder_relbow, '')
-        #self.relbow_angle = self.get_angle(self.p_shoulder_relbow, '')
-
-        # Extract angle directions
         if p_shoulder_lelbow[0] < 0:
-            self.lpitch_angle *= -1
+            self.lpitch *= -1
         if p_elbow_lwrist[0] < 0: 
-            self.lelbow_angle *= -1
+            self.lelbow *= -1
         if p_shoulder_lelbow[1] < 0:
-            self.lyaw_angle *= -1
+            self.lyaw *= -1
         if p_shoulder_lelbow[1] > 0: 
-            self.lroll_angle *= -1
+            self.lroll *= -1
 
     
     def get_rarm_angles(self, p_shoulder_relbow, p_elbow_rwrist): 
         
-        # 
-        self.rpitch_angle = self.get_angle(p_shoulder_relbow, 'xz', 'z')
-        self.rroll_angle = self.get_angle(p_shoulder_relbow, 'yz', 'z')
-        self.ryaw_angle = self.get_angle(p_elbow_rwrist, 'xy', 'x')
-        self.relbow_angle = self.get_angle(p_elbow_rwrist, 'yz', 'z')
+        self.rpitch = self.get_angle(p_shoulder_relbow, 'xz', 'z')
+        self.rroll = self.get_angle(p_shoulder_relbow, 'yz', 'z')
+        self.ryaw = self.get_angle(p_elbow_rwrist, 'xy', 'x')
+        self.relbow = self.get_angle(p_elbow_rwrist, 'yz', 'z')
+
+        if p_shoulder_relbow[0] < 0: 
+            self.rpitch *= -1
+        if p_elbow_rwrist[0] < 0: 
+            self.relbow *= -1
+        if p_shoulder_relbow[1] < 0: 
+            self.ryaw *= -1
+        if p_shoulder_relbow[1] > 0: 
+            self.rroll *= -1
+
+    def get_arm_velocities(self):
+
+        # Velocity calculation
+        try:
+            meas_t = rospy.Time.now().to_sec()
+            self.v_base_lwrist = (self.p_base_rwrist - self.prev_p_base_lwrist) * (meas_t - self.last_pass_t)
+            self.v_base_rwrist = (self.p_base_lwrist - self.prev_p_base_rwrist) * (meas_t - self.last_pass_t)
+            self.prev_p_base_lwrist = copy.deepcopy(self.p_base_lwrist)
+            self.prev_p_base_rwrist = copy.deepcopy(self.p_base_rwrist)
+            self.last_pass_t = meas_t
+        except Exception as e: 
+            rospy.logwarn("Calculating EE velocity: {}".format(str(e)))
+            self.last_pass_t = meas_t
+            self.prev_p_base_lwrist = copy.deepcopy(self.p_base_lwrist)
+            self.prev_p_base_rwrist = copy.deepcopy(self.p_base_rwrist)
+            self.v_base_rwrist = Vector3(0, 0, 0)
+            self.v_base_rwrist = Vector3(0, 0, 0)
 
 
-    def m_avg_filter(self, measurement, window_size, var_name):
+    def filter_arm(self, roll, pitch, yaw, elbow, arm): 
+        # Overusage of copy.deepcopy (bad usage of the class and variable definitions -> HACKING!)
+        roll_ = self.m_avg_filter(copy.deepcopy(roll), window_size, "shoulder_{}roll".format(arm))
+        pitch_ = self.m_avg_filter(copy.deepcopy(pitch), window_size, "shoulder_{}pitch".format(arm))
+        yaw_ = self.m_avg_filter(copy.deepcopy(yaw), window_size, "shoulder_{}yaw".format(arm))
+        elbow_ = self.m_avg_filter(copy.deepcopy(elbow), window_size, "{}elbow".format(arm))
+        return roll_, pitch_, yaw_, elbow
+
+
+    def filter_avg(self, measurement, window_size, var_name):
 
         self.m_dict["{}".format(var_name)].append(measurement)
 
@@ -215,8 +265,19 @@ class hpe2armcmd():
             return measurement
         else: 
             self.m_dict["{}".format(var_name)] = self.m_dict["{}".format(var_name)][-window_size:]
-            return sum(self.m_dict["{}".format(var_name)])/len(self.m_dict["{}".format(var_name)])
+            avg  = sum(self.m_dict["{}".format(var_name)])/len(self.m_dict["{}".format(var_name)])
 
+            return avg 
+    
+
+    def filter_lowpass(self, prev_meas, meas, coeff):
+
+        s = 1 / (1 + coeff)
+        f = 1 - coeff 
+
+        filtered_meas = s * (prev_meas + meas - f * prev_meas)
+
+        return filtered_meas
 
 
 
@@ -309,16 +370,30 @@ class hpe2armcmd():
                 self.send_arm_transforms()
 
                 filtering = True; window_size = 5; 
-                if filtering:
-                    # Overusage of copy.deepcopy (bad usage of the class and variable definitions -> HACKING!)
-                    self.lroll_angle = self.m_avg_filter(copy.deepcopy(self.lroll_angle), window_size, "shoulder_lroll")
-                    self.lpitch_angle = self.m_avg_filter(copy.deepcopy(self.lpitch_angle), window_size, "shoulder_lpitch")
-                    self.lyaw_angle = self.m_avg_filter(copy.deepcopy(self.lyaw_angle), window_size, "shoulder_lyaw")
-                    self.leblow_angle = self.m_avg_filter(copy.deepcopy(self.lelbow_angle), window_size, "lelbow")
+                
+                if filtering == "avg":
+                    
+                    self.lpitch, self.lroll, self.lyaw, self.lelbow = self.filter_avg(self.lpitch, self.lroll, self.lyaw, self.lelbow, "l")
+                    self.rpitch, self.rroll, self.ryaw, self.relbow = self.filter_avg(self.rpitch, self.rroll, self.ryaw, self.relbow, "r")
 
+                if filtering == "lowpass": 
+                    
+                    coeff = 0.8
+                    self.lpitch = self.filter_lowpass(self.prev_lpitch, copy.deepcopy(self.lpitch), 0.8); self.prev_lpitch = self.lpitch
+                    self.lroll = self.filter_lowpass(self.prev_lroll, copy.deepcopy(self.lroll), 0.8); self.prev_lroll = self.lroll
+                    self.lyaw = self.filter_lowpass(self.prev_lyaw, copy.deepcopy(self.lroll), 0.8); self.prev_lyaw = self.lyaw
+                    self.lelbow = self.filter_lowpass(self.prev_lelbow, copy.deepcopy(self.lelbow), 0.8); self.prev_lelbow = self.lelbow
+
+                    self.rpitch = self.filter_lowpass(self.prev_rpitch, copy.deepcopy(self.rpitch), 0.8); self.prev_rpitch = self.rpitch
+                    self.rroll = self.filter_lowpass(self.prev_rroll, copy.deepcopy(self.rroll), 0.8); self.prev_rroll = self.rroll
+                    self.ryaw = self.filter_lowpass(self.prev_ryaw, copy.deepcopy(self.rroll), 0.8); self.prev_ryaw = self.ryaw
+                    self.relbow = self.filter_lowpass(self.prev_relbow, copy.deepcopy(self.relbow), 0.8); self.prev_relbow = self.relbow
+
+                # get EE velocity
+                self.get_arm_velocities()
+                # publish vals for following
                 self.publish_left_arm()
-
-                #self.publish_arm_angles()
+                self.publish_right_arm()
                 
                 measure_runtime = False; 
                 if measure_runtime:
