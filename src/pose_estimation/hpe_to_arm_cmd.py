@@ -198,8 +198,8 @@ class hpe2armcmd():
         # Velocity calculation -> not sure that it's correct
         try:
             meas_t = rospy.Time.now().to_sec()
-            self.v_base_lwrist = (self.p_base_rwrist - self.prev_p_base_lwrist) * (meas_t - self.last_pass_t)
-            self.v_base_rwrist = (self.p_base_lwrist - self.prev_p_base_rwrist) * (meas_t - self.last_pass_t)
+            self.v_base_lwrist = (self.p_base_lwrist - self.prev_p_base_lwrist) * (meas_t - self.last_pass_t)
+            self.v_base_rwrist = (self.p_base_rwrist - self.prev_p_base_rwrist) * (meas_t - self.last_pass_t)
             self.prev_p_base_lwrist = copy.deepcopy(self.p_base_lwrist)
             self.prev_p_base_rwrist = copy.deepcopy(self.p_base_rwrist)
             self.last_pass_t = meas_t
@@ -368,6 +368,7 @@ class hpe2armcmd():
 
                 # get EE velocity --> Decouple
                 self.get_arm_velocities()
+
                 # publish vals for following
                 self.publish_arm(lpitch, lroll, lyaw, lelbow, self.p_base_lwrist, self.v_base_lwrist, "left")
                 self.publish_arm(rpitch, rroll, ryaw, relbow, self.p_base_rwrist, self.v_base_rwrist, "right")
