@@ -18,6 +18,10 @@ Start HPE3d:
 roslaunch hpe_ros_package hpe_3d.launch
 ```
 
+Currently HPE3d includes following: 
+ * depth_extraction_node --> gets 3D point of each human joint 
+ * hpe_to_cmd_node --> creates arm cmd from 3D HPE points
+
 ### System architecture 
 
 ![Figure 1.](./docs/system_arch.png)
@@ -38,7 +42,9 @@ Code for the acore and EPFL experiments contains decoupled launch files for easi
 ### TODO High priority: 
 
  - [x] Try 3d pose estimation (2D + depth)
- - [ ] Publish Cartesian tooltip position (r_wrist, l_wrist) 
- - [ ] Integrate with [antrop_arms](https://github.com/larics/antrop_arms_ros)
- - [ ] Finish depth control (pitch/depth control)
+ - [x] Publish Cartesian tooltip position (r_wrist, l_wrist) 
+ - [x] Integrate with [antrop_arms](https://github.com/larics/antrop_arms_ros)
+ - [x] Finish depth control (pitch/depth control)
  - [ ] Implement inverse kinematics
+ - [ ] Find appropriate filtering method 
+ - [ ] Incoroporate with aerial manipulator control 
