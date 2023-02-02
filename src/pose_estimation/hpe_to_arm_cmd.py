@@ -243,8 +243,8 @@ class hpe2armcmd():
         if filter_type == "avg":
             window_size = 5
             # Overusage of copy.deepcopy (bad usage of the class and variable definitions -> HACKING!)
-            roll_   = self.filter_avg(roll, window_size, "{}_roll".format(arm))
             pitch_  = self.filter_avg(pitch, window_size, "{}_pitch".format(arm))
+            roll_   = self.filter_avg(roll, window_size, "{}_roll".format(arm))
             yaw_    = self.filter_avg(yaw, window_size, "{}_yaw".format(arm))
             elbow_  = self.filter_avg(elbow, window_size, "{}_elbow".format(arm))
 
@@ -263,7 +263,7 @@ class hpe2armcmd():
                 elbow_  = self.filter_lowpass(self.prev["{}_elbow".format(arm)], elbow, 0.8);   self.prev["{}_elbow".format(arm)] = elbow_ 
 
 
-        return roll_, pitch_, yaw_, elbow_
+        return pitch_, roll_, yaw_, elbow_
 
 
     def get_angle(self, p, plane="xy", rAxis = "x", format="degrees"): 
