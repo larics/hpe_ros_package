@@ -23,7 +23,6 @@ import sensor_msgs.point_cloud2 as pc2
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
 # - Read camera_info 
 # - add painting of a z measurements  
-# - This is something that could be useful!
 
 class hpe2armcmd():
 
@@ -81,7 +80,6 @@ class hpe2armcmd():
         v.z = array[2]
         return v
 
-
     def hpe3d_cb(self, msg):
 
         # Msg has header, use it for timestamping 
@@ -108,7 +106,6 @@ class hpe2armcmd():
         # recieved HPE 3D
         self.hpe3d_recv = True
 
-
     def publish_arm(self, pitch, roll, yaw, elbow, p_base_wrist, v_base_wrist, arm): 
 
         try: 
@@ -133,7 +130,7 @@ class hpe2armcmd():
 
 
         except Exception as e: 
-            rospy.logwarn("[{}ArmMsg] Exception encountered: {}".format(armStr, str(e)))
+            rospy.logwarn("[{}ArmMsg] Exception encountered: {}".format(arm, str(e)))
 
 
     def send_transform(self, p_vect, parent_frame, child_frame):
@@ -179,10 +176,10 @@ class hpe2armcmd():
         # https://www.planetanalog.com/five-things-to-know-about-prediction-and-negative-delay-filters/
         
 
-        pitch = self.get_angle(p_shoulder_lelbow, 'xz', 'z')    # mediolateral axis (yz) 
-        roll = self.get_angle(p_shoulder_lelbow, 'yz', 'z')     # anterior axis shoulder (xz)
-        yaw = self.get_angle(p_elbow_lwrist, 'xy', 'x')         # longitudinal axis (xy)
-        elbow = self.get_angle(p_elbow_lwrist, 'yz', 'z')       # elbow rotational axis
+        pitch = self.get_angle(p_shoulder_elbow, 'xz', 'z')    # mediolateral axis (yz) 
+        roll = self.get_angle(p_shoulder_elbow, 'yz', 'z')     # anterior axis shoulder (xz)
+        yaw = self.get_angle(p_elbow_wrist, 'xy', 'x')         # longitudinal axis (xy)
+        elbow = self.get_angle(p_elbow_wrist, 'yz', 'z')       # elbow rotational axis
 
         if p_shoulder_elbow[0] < 0:
             pitch *= -1
@@ -198,7 +195,7 @@ class hpe2armcmd():
 
     def get_arm_velocities(self):
 
-        # Velocity calculation
+        # Velocity calculation -> not sure that it's correct
         try:
             meas_t = rospy.Time.now().to_sec()
             self.v_base_lwrist = (self.p_base_rwrist - self.prev_p_base_lwrist) * (meas_t - self.last_pass_t)
@@ -207,12 +204,13 @@ class hpe2armcmd():
             self.prev_p_base_rwrist = copy.deepcopy(self.p_base_rwrist)
             self.last_pass_t = meas_t
         except Exception as e: 
-            rospy.logwarn("Calculating EE velocity: {}".format(str(e)))
-            self.last_pass_t = meas_t
             self.prev_p_base_lwrist = copy.deepcopy(self.p_base_lwrist)
             self.prev_p_base_rwrist = copy.deepcopy(self.p_base_rwrist)
+            self.v_base_lwrist = Vector3(0, 0, 0)
             self.v_base_rwrist = Vector3(0, 0, 0)
-            self.v_base_rwrist = Vector3(0, 0, 0)
+            self.last_pass_t = meas_t
+            rospy.logwarn("Calculating EE velocity: {}".format(str(e)))
+
     
 
     def filter_avg(self, measurement, window_size, var_name):
@@ -253,16 +251,16 @@ class hpe2armcmd():
         if filter_type == "lowpass":
                 coeff = 0.8
                 # Init first vars
-                if first_filt:
+                if first:
                     self.prev["{}_pitch".format(arm)]   = pitch; 
                     self.prev["{}_roll".format(arm)]    = roll
                     self.prev["{}_yaw".format(arm)]     = yaw
-                    self.prev["{}_elbow".format(arm))]  = elbow
-                else: 
-                    pitch_  = self.filter_lowpass(self.prev["{}_pitch".format(arm)], pitch, 0.8);   self.prev["{}_pitch"] = pitch_
-                    roll_   = self.filter_lowpass(self.prev["{}_roll".format(arm)], roll, 0.8);     self.prev["{}_roll"] = roll_
-                    yaw_    = self.filter_lowpass(self.prev["{}_yaw".format(arm)], yaw, 0.8);       self.prev["{}_yaw".format(arm)] = yaw_
-                    elbow_  = self.filter_lowpass(self.prev["{}_elbow".format(arm)], elbow, 0.8);   self.prev["{}_elbow".format(arm)] = elbow_ 
+                    self.prev["{}_elbow".format(arm)]  = elbow
+                
+                pitch_  = self.filter_lowpass(self.prev["{}_pitch".format(arm)], pitch, 0.8);   self.prev["{}_pitch"] = pitch_
+                roll_   = self.filter_lowpass(self.prev["{}_roll".format(arm)], roll, 0.8);     self.prev["{}_roll"] = roll_
+                yaw_    = self.filter_lowpass(self.prev["{}_yaw".format(arm)], yaw, 0.8);       self.prev["{}_yaw".format(arm)] = yaw_
+                elbow_  = self.filter_lowpass(self.prev["{}_elbow".format(arm)], elbow, 0.8);   self.prev["{}_elbow".format(arm)] = elbow_ 
 
 
         return roll_, pitch_, yaw_, elbow_
@@ -348,11 +346,11 @@ class hpe2armcmd():
                 # Maybe save indices for easier debugging
                 start_time = rospy.Time.now().to_sec()
                 # Get angles arm joints
-                lpitch, lroll, lyaw, lelbow = self.get_larm_angles(copy.deepcopy(self.p_shoulder_lelbow),
-                                                                   copy.deepcopy(self.p_elbow_lwrist))
+                lpitch, lroll, lyaw, lelbow = self.get_arm_angles(copy.deepcopy(self.p_shoulder_lelbow),
+                                                                  copy.deepcopy(self.p_elbow_lwrist))
                                     
-                rpitch, rroll, ryaw, relbow = self.get_rarm_angles(copy.deepcopy(self.p_shoulder_relbow), 
-                                                                   copy.deepcopy(self.p_elbow_rwrist))
+                rpitch, rroll, ryaw, relbow = self.get_arm_angles(copy.deepcopy(self.p_shoulder_relbow), 
+                                                                  copy.deepcopy(self.p_elbow_rwrist))
 
                 # Send transforms
                 self.send_arm_transforms()
@@ -368,11 +366,11 @@ class hpe2armcmd():
                     rpitch, rroll, ryaw, relbow = self.filter_arm(rpitch, rroll, ryaw, relbow, "right", "lowpass", first_filt)
                     first_filt = False                            
 
-                # get EE velocity --> Fix this!
+                # get EE velocity --> Decouple
                 self.get_arm_velocities()
                 # publish vals for following
-                self.publish_arm(rpitch, rroll, ryaw, relbow)
-                self.publish_arm(lpitch, lroll, lyaw, lelbow)
+                self.publish_arm(lpitch, lroll, lyaw, lelbow, self.p_base_lwrist, self.v_base_lwrist, "left")
+                self.publish_arm(rpitch, rroll, ryaw, relbow, self.p_base_rwrist, self.v_base_rwrist, "right")
                 
                 measure_runtime = False; 
                 if measure_runtime:
