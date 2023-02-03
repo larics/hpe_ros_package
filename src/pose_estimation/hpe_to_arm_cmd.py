@@ -356,7 +356,7 @@ class hpe2armcmd():
                 self.send_arm_transforms()
 
                 # Filtering!
-                filtering = "lowpass"; 
+                filtering = "avg"; 
                 if filtering == "avg":                    
                     lpitch, lroll, lyaw, lelbow = self.filter_arm(lpitch, lroll, lyaw, lelbow, "left", "avg")
                     rpitch, rroll, ryaw, relbow = self.filter_arm(rpitch, rroll, ryaw, relbow, "right", "avg")
