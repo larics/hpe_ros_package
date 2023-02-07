@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 
 import os
 import sys
@@ -60,6 +60,7 @@ class hpe2uavcmd():
         # self.pitch_pub = rospy.Publisher("pitch")
         # self.yaw_pub = rospy.Publisher("yaw")
         # self.height_pub = rospy.Publisher("height")
+        self.gen_r_pub = rospy.Publisher("/uav/r", Vector3)
         self.pos_pub = rospy.Publisher("/uav/pose_ref", Pose)
         self.marker_pub = rospy.Publisher("ctl/viz", Marker)
         self.cb_point_marker_pub = rospy.Publisher("ctl/cb_point", Marker)    
@@ -164,21 +165,12 @@ class hpe2uavcmd():
 
         scaling_x = 0.3; scaling_y = 0.3; scaling_z = 0.1;
         pos_ref = Pose()
-        # This summation is mad (too fast change of a reference)
-        # Command is too fast in this form :) 
-        #pos_ref.x = self.currentPose.pose.position.x + self.body_ctl.x * scaling_x
-        #pos_ref.y = self.currentPose.pose.position.y + self.body_ctl.y * scaling_y
-
         pos_ref.position.x = self.currentPose.pose.position.x + self.body_ctl.x * scaling_x
         pos_ref.position.y = self.currentPose.pose.position.y + self.body_ctl.y * scaling_y
         pos_ref.position.z = self.currentPose.pose.position.z + self.body_ctl.z * scaling_z
         
-        
-        
-        
         self.pos_pub.publish(pos_ref)
-        #rospy.loginfo("Publishing x: {}".format(pos_ref.x))
-        #rospy.loginfo("Publishing y: {}".format(pos_ref.y))
+        self.gen_r_pub.publish(self.body_ctl)
 
         # ARROW to visualize direction of a command
         arrowMsg = self.create_marker(Marker.ARROW, self.calib_point.x, self.calib_point.y, self.calib_point.z, 
@@ -197,7 +189,7 @@ class hpe2uavcmd():
         while not rospy.is_shutdown():
             # Multiple conditions neccessary to run program!
             run_ready = self.hpe3d_recv
-            calibration_timeout = 5
+            calibration_timeout = 10
 
             # First run condition
             if run_ready and not calibrated:

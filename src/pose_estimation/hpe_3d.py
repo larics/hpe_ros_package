@@ -32,7 +32,7 @@ if openpose:
 
 class HumanPose3D(): 
 
-    def __init__(self, freq):
+    def __init__(self, freq, openpose):
         
         # TODO: Add LOG_LEVEL as argument
         rospy.init_node("hpe3d", log_level=rospy.INFO)
@@ -45,11 +45,16 @@ class HumanPose3D():
         self.cinfo_recv         = False 
 
         # IF openpose: True, ELSE: False
-        self.openpose = True   
+        self.openpose = openpose
 
         if self.openpose: 
             self.body25 = True
             self.coco = False
+            self.mpii = False
+        else: 
+            self.coco = True
+            self.body25 = False
+            self.mpii = False
 
         # Initialize publishers and subscribers
         self._init_subscribers()
@@ -70,8 +75,6 @@ class HumanPose3D():
                                 17: "r_ear", 18:"l_ear", 19:"l_big_toe", 20:"l_small_toe", 21: "l_heel", 22: "r_big_toe",
                                 23: "r_small_toe", 24: "r_heel", 25: "background"}
         
-        self.mpii = False
-
         # self.indexing = different indexing depending on weights that are used!
         if self.mpii: self.indexing = self.mpii_indexing
         if self.coco: self.indexing = self.coco_indexing   
@@ -90,7 +93,6 @@ class HumanPose3D():
         self.depth_sub          = rospy.Subscriber("camera/depth_registered/points", PointCloud2, self.pcl_cb, queue_size=1)
         self.depth_cinfo_sub    = rospy.Subscriber("camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
        
-
         if self.openpose: 
             self.predictions_sub    = rospy.Subscriber("/frame", Frame, self.pred_cb, queue_size=1)
         else: 
@@ -105,8 +107,9 @@ class HumanPose3D():
         self.left_wrist_pub     = rospy.Publisher("leftw_point", Vector3, queue_size=1)
         self.right_wrist_pub    = rospy.Publisher("rightw_point", Vector3, queue_size=1)
         self.upper_body_3d_pub  = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
-
+        
         rospy.loginfo("Initialized publishers!")
+
 
     def image_cb(self, msg): 
 
@@ -203,6 +206,16 @@ class HumanPose3D():
 
             # Each of this tf-s is basically distance from camera_frame_name to some other coordinate frame :) 
             # use lookupTransform to fetch transform and estimate angles... 
+
+
+    # Write me a method for 
+
+    def plot_joint_states(self, msg):
+        # Copilot
+
+        pass
+
+
             
 
     def plot_depths(self, keypoints, depths): 
@@ -320,5 +333,5 @@ def get_RotZ(angle):
 
 if __name__ == "__main__": 
 
-    hpe3D = HumanPose3D(sys.argv[1])
+    hpe3D = HumanPose3D(sys.argv[1], sys.argv[2])
     hpe3D.run()

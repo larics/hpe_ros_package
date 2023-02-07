@@ -13,9 +13,10 @@ from PIL import Image as PILImage
 from img_utils import convert_pil_to_ros_img
 
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
-from std_msgs.msg import Float64MultiArray, Float32
+from std_msgs.msg import Float64MultiArray, Float32, Float64
 from geometry_msgs.msg import Vector3
 from hpe_ros_msgs.msg import TorsoJointPositions, JointArmCmd, CartesianArmCmd
+from datetime import datetime
 
 import sensor_msgs.point_cloud2 as pc2
 
@@ -55,6 +56,8 @@ class hpe2armcmd():
 
         rospy.loginfo("[Hpe3D] started!")
 
+        #f = open("{}-{}".format("jointPositions", datetime.now().strftime("%H:%M:%S"))
+
 
     def _init_subscribers(self):
 
@@ -71,6 +74,12 @@ class hpe2armcmd():
         self.right_arm_pub = rospy.Publisher("right_arm", JointArmCmd, queue_size=1)
         self.cleft_arm_pub = rospy.Publisher("cart_left_arm", CartesianArmCmd, queue_size=1)
         self.cright_arm_pub = rospy.Publisher("cart_right_arm", CartesianArmCmd, queue_size=1)
+
+        self.robot_joy1_pub = rospy.Publisher("/wp_manipulator/joint1_position_controller/command", Float64, queue_size=1)
+        self.robot_joy2_pub = rospy.Publisher("/wp_manipulator/joint2_position_controller/command", Float64, queue_size=1)
+        self.robot_joy3_pub = rospy.Publisher("/wp_manipulator/joint3_position_controller/command", Float64, queue_size=1)
+        self.robot_joy4_pub = rospy.Publisher("/wp_manipulator/joint4_position_controller/command", Float64, queue_size=1)
+
 
     def arrayToVect(self, array): 
 
@@ -133,6 +142,21 @@ class hpe2armcmd():
             rospy.logwarn("[{}ArmMsg] Exception encountered: {}".format(arm, str(e)))
 
 
+    def publish_robot_arm(self, spitch, sroll, syaw, elbow): 
+
+        spitchMsg = Float64()
+        spitchMsg.data = np.radians(spitch)
+        srollMsg = Float64()
+        srollMsg.data = np.radians(sroll)
+        syawMsg = Float64()
+        syawMsg.data = np.radians(syaw)
+        elbowMsg = Float64()
+        elbowMsg.data = np.radians(elbow)
+        self.robot_joy1_pub.publish(spitchMsg)
+        self.robot_joy2_pub.publish(srollMsg)
+        self.robot_joy3_pub.publish(syawMsg)
+        self.robot_joy4_pub.publish(elbowMsg)
+
     def send_transform(self, p_vect, parent_frame, child_frame):
 
         debug = False
@@ -179,7 +203,7 @@ class hpe2armcmd():
         pitch = self.get_angle(p_shoulder_elbow, 'xz', 'z')    # mediolateral axis (yz) 
         roll = self.get_angle(p_shoulder_elbow, 'yz', 'z')     # anterior axis shoulder (xz)
         yaw = self.get_angle(p_elbow_wrist, 'xy', 'x')         # longitudinal axis (xy)
-        elbow = self.get_angle(p_elbow_wrist, 'yz', 'z')       # elbow rotational axis
+        elbow = self.get_vect_angle(p_shoulder_elbow, p_elbow_wrist)       # elbow rotational axis
 
         if p_shoulder_elbow[0] < 0:
             pitch *= -1
@@ -266,6 +290,15 @@ class hpe2armcmd():
         return pitch_, roll_, yaw_, elbow_
 
 
+    def limitCmd(self, cmd, upperLimit, lowerLimit):
+        if cmd > upperLimit: 
+            cmd = upperLimit
+        if cmd < lowerLimit: 
+            cmd = lowerLimit
+
+        return cmd
+
+
     def get_angle(self, p, plane="xy", rAxis = "x", format="degrees"): 
 
         # theta = cos-1 [ (a * b) / (abs(a) abs(b)) ]
@@ -290,6 +323,17 @@ class hpe2armcmd():
         num_decimals = 4
 
         return np.round(angle, num_decimals)
+
+    def get_vect_angle(self, v1, v2, format="degrees"): 
+
+        d_ = np.dot(v1, v2)
+        n1 = np.linalg.norm(v1)
+        n2 = np.linalg.norm(v2)
+        ang = np.arccos(d_/(n1 * n2))
+        if format=="degrees": 
+            ang = np.degrees(ang)
+
+        return ang
 
 
     def createPvect(self, msg): 
@@ -372,6 +416,8 @@ class hpe2armcmd():
                 # publish vals for following
                 self.publish_arm(lpitch, lroll, lyaw, lelbow, self.p_base_lwrist, self.v_base_lwrist, "left")
                 self.publish_arm(rpitch, rroll, ryaw, relbow, self.p_base_rwrist, self.v_base_rwrist, "right")
+
+                self.publish_robot_arm(lpitch, lroll, lyaw, lelbow)
                 
                 measure_runtime = False; 
                 if measure_runtime:
