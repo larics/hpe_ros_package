@@ -121,10 +121,10 @@ class hpe2armcmd():
             # Joint space
             armCmdMsg = JointArmCmd()
             armCmdMsg.header.stamp          = rospy.Time().now()
-            armCmdMsg.shoulder_pitch.data   = float(pitch)
-            armCmdMsg.shoulder_roll.data    = float(roll)
-            armCmdMsg.shoulder_yaw.data     = float(yaw)
-            armCmdMsg.elbow.data            = float(elbow)
+            armCmdMsg.shoulder_pitch.data   = float(np.degrees(pitch))
+            armCmdMsg.shoulder_roll.data    = float(np.degrees(roll))
+            armCmdMsg.shoulder_yaw.data     = float(np.degrees(yaw))
+            armCmdMsg.elbow.data            = float(np.degrees(elbow))
             cartArmCmdMsg = CartesianArmCmd()
             cartArmCmdMsg.header.stamp = rospy.Time().now()
             cartArmCmdMsg.positionEE = self.arrayToVect(-1 * p_base_wrist)
@@ -200,21 +200,59 @@ class hpe2armcmd():
         # https://www.planetanalog.com/five-things-to-know-about-prediction-and-negative-delay-filters/
         
 
-        pitch = self.get_angle(p_shoulder_elbow, 'xz', 'z')    # mediolateral axis (yz) 
-        roll = self.get_angle(p_shoulder_elbow, 'yz', 'z')     # anterior axis shoulder (xz)
-        yaw = self.get_angle(p_elbow_wrist, 'xy', 'x')         # longitudinal axis (xy)
+        #pitch = self.get_angle(p_shoulder_elbow, 'xz', 'z')    # mediolateral axis (yz) 
+        #roll = self.get_angle(p_shoulder_elbow, 'yz', 'z')     # anterior axis shoulder (xz)
+        #yaw = self.get_angle(p_elbow_wrist, 'xy', 'x')         # longitudinal axis (xy)
+
+        roll, pitch, yaw = self.get_RPY(p_shoulder_elbow)
         elbow = self.get_vect_angle(p_shoulder_elbow, p_elbow_wrist)       # elbow rotational axis
 
-        if p_shoulder_elbow[0] < 0:
-            pitch *= -1
-        if p_elbow_wrist[0] < 0: 
-            elbow *= -1
-        if p_shoulder_elbow[1] < 0:
-            yaw *= -1
-        if p_shoulder_elbow[1] > 0: 
-            roll *= -1
-
         return pitch, roll, yaw, elbow    
+
+    def get_RPY(self, p_shoulder_elbow):
+
+        unit_p_shoulder_elbow = p_shoulder_elbow/np.linalg.norm(p_shoulder_elbow)
+        rospy.loginfo("unit_p_shoulder_elbow: {}".format(unit_p_shoulder_elbow))
+        x, y, z = unit_p_shoulder_elbow[0], unit_p_shoulder_elbow[1], unit_p_shoulder_elbow[2]
+
+        # RPY angles --> pilot
+        Y_ = np.arctan(x/y)
+        P_ = np.arccos(-z)
+        
+        n = x*np.sin(Y_)
+        d = x*np.cos(Y_)*np.sin(P_) + y*np.sin(P_)+x*np.cos(P_)
+        R_ = np.arctan(n/d)
+        
+        #if np.isnan(Y_): 
+        #    Y.append(Y[-1])
+        #else: 
+        #    Y.append(Y_)
+            
+        #if np.isnan(P_):
+        #    P.append(P[-1])
+        #else: 
+        #    P.append(P_)
+            
+        #if np.isnan(R_):
+        #    R.append(R[-1])
+        #else: 
+        #    R.append(R_)
+    
+        return R_, P_, Y_
+
+
+    def normalize(v): 
+    
+        norml = []
+        for v_ in v: 
+            normv = v_/(np.linalg.norm(v_))
+        
+            if np.isnan(normv).any():
+                norml.append(norml[-1])
+            else: 
+                norml.append(normv)
+        
+        return np.array(norml)    
 
 
     def get_arm_velocities(self):
@@ -239,9 +277,15 @@ class hpe2armcmd():
 
     def filter_avg(self, measurement, window_size, var_name):
 
-        self.m_dict["{}".format(var_name)].append(measurement)
+        try:
+            if np.isnan(measurement):
+                self.m_dict["{}".format(var_name)].append(self.m_dict["{}".format(var_name)][-1])
+            else: 
+                self.m_dict["{}".format(var_name)].append(measurement)
+        except: 
+            rospy.logwarn("Not enough measurements to calculate average.")
 
-        rospy.logdebug("{}: {}".format(var_name, self.m_dict["{}".format(var_name)]))
+        #rospy.logdebug("{}: {}".format(var_name, self.m_dict["{}".format(var_name)]))
         
         if len(self.m_dict["{}".format(var_name)]) < window_size: 
             return measurement
