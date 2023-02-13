@@ -14,13 +14,12 @@ from img_utils import convert_pil_to_ros_img
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from std_msgs.msg import Float64MultiArray
 from geometry_msgs.msg import Vector3
-from hpe_ros_package.msg import TorsoJointPositions
+from hpe_ros_msgs.msg import TorsoJointPositions
+from ros_openpose_msgs.msg import Frame
 
 import sensor_msgs.point_cloud2 as pc2
 
-openpose = True
-if openpose: 
-    from ros_openpose.msg import Frame
+
 
 
 
