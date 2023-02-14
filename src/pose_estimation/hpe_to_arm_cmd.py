@@ -15,6 +15,7 @@ from geometry_msgs.msg import Vector3
 from hpe_ros_msgs.msg import TorsoJointPositions, JointArmCmd, CartesianArmCmd
 
 
+
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
 # - Read camera_info 
@@ -40,9 +41,10 @@ class hpe2armcmd():
         self.unit_y = np.array([0, 1, 0])
         self.unit_z = np.array([0, 0, 1])
 
-        self.m_dict = {"right_pitch": [], "right_roll": [], "right_yaw": [], 
-                       "left_pitch": [], "left_roll": [], "left_yaw": [], 
-                       "right_elbow": [], "left_elbow": []}
+        self.m_dict = {"right_pitch": [], "right_roll": [], "right_yaw": [], "right_elbow": [], 
+                       "left_pitch": [], "left_roll": [], "left_yaw": [], "left_elbow": [],
+                        "right_x": [], "right_y": [], "right_z": [], 
+                        "left_x": [], "left_y": [], "left_z": []}
         self.prev = {}
 
         self.camera_frame_name = "camera_color_frame"
@@ -89,15 +91,18 @@ class hpe2armcmd():
         self.p_thorax_lshoulder = (self.p_base_lshoulder - self.p_base_thorax) * (-1)
         self.p_shoulder_lelbow = (self.p_base_lelbow - self.p_base_lshoulder) * (-1)
         self.p_elbow_lwrist = (self.p_base_lwrist - self.p_base_lelbow) * (-1)
+        self.p_shoulder_lwrist = (self.p_base_lwrist - self.p_base_lshoulder) * (-1)
         # Right arm 
         self.p_thorax_rshoulder = (self.p_base_rshoulder - self.p_base_thorax) * (-1)
         self.p_shoulder_relbow = (self.p_base_relbow - self.p_base_rshoulder) * (-1)
         self.p_elbow_rwrist = (self.p_base_rwrist - self.p_base_relbow) * (-1)
+        self.p_shoulder_rwrist = (self.p_base_rwrist - self.p_base_rshoulder) * (-1 )
+
         # recieved HPE 3D
         self.hpe3d_recv = True
 
 
-    def publish_arm(self, pitch, roll, yaw, elbow, p_base_wrist, v_base_wrist, arm): 
+    def publish_arm(self, pitch, roll, yaw, elbow, p_shoulder_wrist, v_shoulder_wrist, arm): 
 
         try: 
             # Joint space
@@ -109,8 +114,10 @@ class hpe2armcmd():
             armCmdMsg.elbow.data            = float(elbow)
             cartArmCmdMsg = CartesianArmCmd()
             cartArmCmdMsg.header.stamp = rospy.Time().now()
-            #cartArmCmdMsg.positionEE = self.arrayToVect(-1 * p_base_wrist) # Wrong pos, not neccessary now!
-            #cartArmCmdMsg.velocityEE = self.arrayToVect(v_base_wrist)
+            # Change z value for the cartesian command sending
+            p_shoulder_wrist[2] *= -1
+            cartArmCmdMsg.positionEE = arrayToVect(p_shoulder_wrist, Vector3()) # Wrong pos, not neccessary now!
+            cartArmCmdMsg.velocityEE = arrayToVect(v_shoulder_wrist, Vector3())
 
             if arm == "right": 
                 self.right_arm_pub.publish(armCmdMsg)
@@ -273,8 +280,27 @@ class hpe2armcmd():
             avg  = sum(self.m_dict["{}".format(var_name)])/len(self.m_dict["{}".format(var_name)])
 
             return avg 
-    
 
+    def filter_median(self, measurement, window_size, var_name):
+
+        try:
+            if np.isnan(measurement):
+                self.m_dict["{}".format(var_name)].append(self.m_dict["{}".format(var_name)][-1])
+            else: 
+                self.m_dict["{}".format(var_name)].append(measurement)
+        except:
+            rospy.logwarn("Not enough measurements to calculate median.")
+        
+        if (len(self.m_dict["{}".format(var_name)]) < window_size):
+            return measurement
+        else: 
+            prev = self.m_dict["{}".format(var_name)][-1]
+            self.m_dict["{}".format(var_name)] = self.m_dict["{}".format(var_name)][-window_size:]
+            median = np.median(np.sort(self.m_dict["{}".format(var_name)]))
+
+
+            return median
+    
     def filter_lowpass(self, prev_meas, meas, coeff):
 
         s = 1 / (1 + coeff)
@@ -283,7 +309,6 @@ class hpe2armcmd():
         filtered_meas = s * (prev_meas + meas - f * prev_meas)
 
         return filtered_meas
-
 
     def filter_arm(self, pitch, roll, yaw, elbow, arm, filter_type, first=False): 
 
@@ -312,6 +337,21 @@ class hpe2armcmd():
 
         return pitch_, roll_, yaw_, elbow_
 
+    def filter_cartesian(self, x, y, z, arm, filter_type):
+
+        if filter_type == "avg": 
+            window_size = 7
+            x = self.filter_avg(x, window_size, "{}_x".format(arm))
+            y = self.filter_avg(y, window_size, "{}_y".format(arm))
+            z = self.filter_avg(z, window_size, "{}_z".format(arm))
+
+        if filter_type == "median":
+            window_size = 7
+            x = self.filter_median(x, window_size, "{}_x".format(arm))
+            y = self.filter_median(y, window_size, "{}_y".format(arm))
+            z = self.filter_median(z, window_size, "{}_z".format(arm))
+
+        return np.array([x, y, z])
 
     def get_angle(self, p, plane="xy", rAxis = "x", format="radians"): 
 
@@ -419,6 +459,10 @@ class hpe2armcmd():
                 if filtering == "avg":                    
                     lpitch, lroll, lyaw, lelbow = self.filter_arm(lpitch, lroll, lyaw, lelbow, "left", "avg")
                     rpitch, rroll, ryaw, relbow = self.filter_arm(rpitch, rroll, ryaw, relbow, "right", "avg")
+                    p_shoulder_lwrist = self.filter_cartesian(self.p_shoulder_lwrist[0], self.p_shoulder_lwrist[1], self.p_shoulder_lwrist[2], "left", "avg")
+                    p_shoulder_rwrist = self.filter_cartesian(self.p_shoulder_rwrist[0], self.p_shoulder_rwrist[1], self.p_shoulder_rwrist[2], "right", "avg")
+                    #rospy.loginfo("left_arm: {}".format(p_shoulder_lwrist))
+                    #rospy.loginfo("right_arm: {}".format(p_shoulder_rwrist))
 
                 if filtering == "lowpass": 
                     lpitch, lroll, lyaw, lelbow = self.filter_arm(lpitch, lroll, lyaw, lelbow, "left", "lowpass", first_filt)
@@ -429,8 +473,8 @@ class hpe2armcmd():
                 self.get_arm_velocities()
 
                 # publish vals for following
-                self.publish_arm(lpitch, lroll, lyaw, lelbow, self.p_base_lwrist, self.v_base_lwrist, "left")
-                self.publish_arm(rpitch, rroll, ryaw, relbow, self.p_base_rwrist, self.v_base_rwrist, "right")
+                self.publish_arm(lpitch, lroll, lyaw, lelbow, p_shoulder_lwrist, self.p_shoulder_lwrist, "left")
+                self.publish_arm(rpitch, rroll, ryaw, relbow, p_shoulder_rwrist, self.p_shoulder_rwrist, "right")
 
                 self.publish_robot_arm(lpitch, lroll, lyaw, lelbow)
                 

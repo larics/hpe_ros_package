@@ -17,11 +17,9 @@ from geometry_msgs.msg import Vector3
 from hpe_ros_msgs.msg import TorsoJointPositions
 from ros_openpose_msgs.msg import Frame
 
+import message_filters
+
 import sensor_msgs.point_cloud2 as pc2
-
-
-
-
 
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
@@ -88,12 +86,19 @@ class HumanPose3D():
 
     def _init_subscribers(self):
 
-        self.camera_sub         = rospy.Subscriber("camera/color/image_raw", Image, self.image_cb, queue_size=1)
-        self.depth_sub          = rospy.Subscriber("camera/depth_registered/points", PointCloud2, self.pcl_cb, queue_size=1)
+        self.camera_sub = rospy.Subscriber("camera/color/image_raw", Image, self.image_cb, queue_size=1)
+        self.depth_sub = rospy.Subscriber("camera/depth_registered/points", PointCloud2, self.pcl_cb, queue_size=1)
         self.depth_cinfo_sub    = rospy.Subscriber("camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
        
         if self.openpose: 
             self.predictions_sub    = rospy.Subscriber("/frame", Frame, self.pred_cb, queue_size=1)
+            #self.predictions_sub    = message_filters.Subscriber("/frame", Frame)
+            #self.depth_sub          = message_filters.Subscriber("camera/depth_registered/points", PointCloud2)
+            # Doesn't matter! 
+            #self.ats                = message_filters.ApproximateTimeSynchronizer([self.predictions_sub, self.depth_sub], queue_size=10, slop=0.05)
+            #self.ats.registerCallback(self.frame_pcl_cb)
+
+
         else: 
             self.predictions_sub    = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
         
@@ -304,3 +309,38 @@ if __name__ == "__main__":
 
     hpe3D = HumanPose3D(sys.argv[1], sys.argv[2])
     hpe3D.run()
+
+
+
+"""
+    def image_pcl_cb(self, img_msg, pcl_msg): 
+        
+        rospy.loginfo("Received image and pcl!")
+        self.img        = np.frombuffer(img_msg.data, dtype=np.uint8).reshape(img_msg.height, img_msg.width, -1)
+        self.img_recv   = True
+
+        self.pcl        = pcl_msg
+        self.pcl_recv   = True
+
+    def frame_pcl_cb(self, frame_msg, pcl_msg): 
+
+        #keypoints = msg.data
+        rospy.loginfo("Received frame and pcl!")
+        persons = frame_msg.persons
+        self.predictions = []
+        self.pose_predictions = []
+
+        if self.openpose:
+            for i, person in enumerate(persons): 
+                if i == 0: 
+                    for bodypart in person.bodyParts: 
+                        self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
+                        self.pose_predictions.append((bodypart.point.x, bodypart.point.y, bodypart.point.z))
+            
+            self.predictions = self.predictions[:18]
+            self.pred_recv = True
+
+        self.pcl        = pcl_msg
+        self.pcl_recv   = True    
+
+"""
