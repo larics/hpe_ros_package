@@ -262,7 +262,13 @@ class hpe2armcmd():
         
         if len(self.m_dict["{}".format(var_name)]) < window_size: 
             return measurement
-        else: 
+        else:
+            prev = self.m_dict["{}".format(var_name)][-1] 
+
+            # Too large change in measurement -> ignore it (more than 30 deg)
+            if measurement - prev > 0.52: 
+                measurement = prev
+            
             self.m_dict["{}".format(var_name)] = self.m_dict["{}".format(var_name)][-window_size:]
             avg  = sum(self.m_dict["{}".format(var_name)])/len(self.m_dict["{}".format(var_name)])
 
@@ -282,7 +288,7 @@ class hpe2armcmd():
     def filter_arm(self, pitch, roll, yaw, elbow, arm, filter_type, first=False): 
 
         if filter_type == "avg":
-            window_size = 5
+            window_size = 7
             # Overusage of copy.deepcopy (bad usage of the class and variable definitions -> HACKING!)
             pitch_  = self.filter_avg(pitch, window_size, "{}_pitch".format(arm))
             roll_   = self.filter_avg(roll, window_size, "{}_roll".format(arm))
@@ -307,7 +313,7 @@ class hpe2armcmd():
         return pitch_, roll_, yaw_, elbow_
 
 
-    def get_angle(self, p, plane="xy", rAxis = "x", format="degrees"): 
+    def get_angle(self, p, plane="xy", rAxis = "x", format="radians"): 
 
         # theta = cos-1 [ (a * b) / (abs(a) abs(b)) ]
         # Orthogonal projection of the vector to the wanted plane
@@ -333,7 +339,7 @@ class hpe2armcmd():
         return np.round(angle, num_decimals)
 
 
-    def get_vect_angle(self, v1, v2, format="degrees"): 
+    def get_vect_angle(self, v1, v2, format="radians"): 
 
         d_ = np.dot(v1, v2)
         n1 = np.linalg.norm(v1)
