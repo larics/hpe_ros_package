@@ -122,10 +122,10 @@ class hpe2armcmd():
             # Joint space
             armCmdMsg = JointArmCmd()
             armCmdMsg.header.stamp          = rospy.Time().now()
-            armCmdMsg.shoulder_pitch.data   = float(np.degrees(pitch))
-            armCmdMsg.shoulder_roll.data    = float(np.degrees(roll))
-            armCmdMsg.shoulder_yaw.data     = float(np.degrees(yaw))
-            armCmdMsg.elbow.data            = float(np.degrees(elbow))
+            armCmdMsg.shoulder_pitch.data   = float(pitch)
+            armCmdMsg.shoulder_roll.data    = float(roll)
+            armCmdMsg.shoulder_yaw.data     = float(yaw)
+            armCmdMsg.elbow.data            = float(elbow)
             cartArmCmdMsg = CartesianArmCmd()
             cartArmCmdMsg.header.stamp = rospy.Time().now()
             cartArmCmdMsg.positionEE = self.arrayToVect(-1 * p_base_wrist)
@@ -196,19 +196,26 @@ class hpe2armcmd():
             rospy.logwarn("Sending arm transforms failed: {}".format(str(e)))
 
 
-    def get_arm_angles(self, p_shoulder_elbow, p_elbow_wrist): 
+    def get_arm_angles(self, p_shoulder_elbow, p_elbow_wrist, arm): 
         # No delay filtering 
         # https://www.planetanalog.com/five-things-to-know-about-prediction-and-negative-delay-filters/
         
+        pitch = self.get_angle(p_shoulder_elbow, 'xz', 'z')    # mediolateral axis (yz) 
+        roll = self.get_angle(p_shoulder_elbow, 'yz', 'z')     # anterior axis shoulder (xz)
+        yaw = self.get_angle(p_elbow_wrist, 'xy', 'x')         # longitudinal axis (xy)
 
-        #pitch = self.get_angle(p_shoulder_elbow, 'xz', 'z')    # mediolateral axis (yz) 
-        #roll = self.get_angle(p_shoulder_elbow, 'yz', 'z')     # anterior axis shoulder (xz)
-        #yaw = self.get_angle(p_elbow_wrist, 'xy', 'x')         # longitudinal axis (xy)
-
-        roll, pitch, yaw = self.get_RPY(p_shoulder_elbow)
+        #roll, pitch, yaw = self.get_RPY(p_shoulder_elbow)
         elbow = self.get_vect_angle(p_shoulder_elbow, p_elbow_wrist)       # elbow rotational axis
 
+        if p_shoulder_elbow[0] < 0: 
+            pitch *= -1
+        if p_shoulder_elbow[1] > 0:
+            roll *= -1
+        if p_elbow_wrist[1] < 0: 
+            yaw *= -1
+
         return pitch, roll, yaw, elbow    
+
 
     def get_RPY(self, p_shoulder_elbow):
 
@@ -274,7 +281,6 @@ class hpe2armcmd():
             self.last_pass_t = meas_t
             rospy.logwarn("Calculating EE velocity: {}".format(str(e)))
 
-    
 
     def filter_avg(self, measurement, window_size, var_name):
 
@@ -307,7 +313,7 @@ class hpe2armcmd():
         return filtered_meas
 
 
-    def filter_arm(self, roll, pitch, yaw, elbow, arm, filter_type, first=False): 
+    def filter_arm(self, pitch, roll, yaw, elbow, arm, filter_type, first=False): 
 
         if filter_type == "avg":
             window_size = 5
@@ -436,10 +442,10 @@ class hpe2armcmd():
                 start_time = rospy.Time.now().to_sec()
                 # Get angles arm joints
                 lpitch, lroll, lyaw, lelbow = self.get_arm_angles(copy.deepcopy(self.p_shoulder_lelbow),
-                                                                  copy.deepcopy(self.p_elbow_lwrist))
+                                                                  copy.deepcopy(self.p_elbow_lwrist), "left")
                                     
                 rpitch, rroll, ryaw, relbow = self.get_arm_angles(copy.deepcopy(self.p_shoulder_relbow), 
-                                                                  copy.deepcopy(self.p_elbow_rwrist))
+                                                                  copy.deepcopy(self.p_elbow_rwrist), "right")
 
                 # Send transforms
                 self.send_arm_transforms()

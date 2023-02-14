@@ -147,12 +147,6 @@ class HumanPose3D():
     def cinfo_cb(self, msg): 
 
         self.cinfo_recv = True
-        # Color --> Params for homography
-        # ------
-        # K: [911.5259399414062, 0.0, 642.8853759765625, 0.0, 909.3442993164062, 357.6820068359375, 0.0, 0.0, 1.0]
-        # Depth
-        # ------
-        # P: [886.5087280273438, 0.0, 645.0914306640625, 0.0, 0.0, 886.5087280273438, 358.6357116699219, 0.0, 0.0, 0.0, 1.0, 0.0]
 
     def get_depths(self, pcl, indices, axis="z"):
 
@@ -276,32 +270,36 @@ class HumanPose3D():
         while not rospy.is_shutdown(): 
             
             run_ready = self.img_recv and self.cinfo_recv and self.pcl_recv and self.pred_recv
+            try:
+                if run_ready: 
+                    rospy.loginfo_throttle(10, "Publishing HPE3d!")
+                    # Maybe save indices for easier debugging
+                    start_time = rospy.Time.now().to_sec()
+                    # Get X,Y,Z coordinates for predictions
+                    coords = self.get_coordinates(self.pcl, self.predictions, "xyz") # rospy.logdebug("coords: {}".format(coords))
+                    # Create coordinate frames
+                    tfs, pos_named = self.create_keypoint_tfs(coords)
+                    # Send transforms
+                    self.send_transforms(tfs)
+                    # Publish created ROS msg 
+                    msg = self.create_ROSmsg(pos_named)
+                    if msg: 
+                        self.upper_body_3d_pub.publish(msg)
 
-            if run_ready: 
-                rospy.loginfo_throttle(10, "Publishing HPE3d!")
-                # Maybe save indices for easier debugging
-                start_time = rospy.Time.now().to_sec()
-                # Get X,Y,Z coordinates for predictions
-                coords = self.get_coordinates(self.pcl, self.predictions, "xyz") # rospy.logdebug("coords: {}".format(coords))
-                # Create coordinate frames
-                tfs, pos_named = self.create_keypoint_tfs(coords)
-                # Send transforms
-                self.send_transforms(tfs)
-                # Publish created ROS msg 
-                msg = self.create_ROSmsg(pos_named)
-                if msg: 
-                    self.upper_body_3d_pub.publish(msg)
+                    measure_runtime = False; 
+                    if measure_runtime:
+                        duration = rospy.Time.now().to_sec() - start_time
+                        rospy.logdebug("Run t: {}".format(duration)) # --> very fast!
 
-                measure_runtime = False; 
-                if measure_runtime:
-                    duration = rospy.Time.now().to_sec() - start_time
-                    rospy.logdebug("Run t: {}".format(duration)) # --> very fast!
+                    self.rate.sleep()
 
-            else: 
 
-                self.debug_print()
+                else: 
+
+                    self.debug_print()
+            except Exception as e: 
+                rospy.logwarn("Run failed: {}".format(e))
                 
-            self.rate.sleep()
 
 
 # Create Rotation matrices
