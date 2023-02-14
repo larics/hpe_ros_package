@@ -8,23 +8,18 @@ import tf
 import copy
 import numpy as np
 
-from PIL import ImageDraw, ImageFont
-from PIL import Image as PILImage
-from img_utils import convert_pil_to_ros_img
+from utils import *
 
-from sensor_msgs.msg import Image, CameraInfo, PointCloud2
-from std_msgs.msg import Float64MultiArray, Float32, Float64
+from std_msgs.msg import Float64
 from geometry_msgs.msg import Vector3
 from hpe_ros_msgs.msg import TorsoJointPositions, JointArmCmd, CartesianArmCmd
 
-from datetime import datetime
-
-import sensor_msgs.point_cloud2 as pc2
 
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
 # - Read camera_info 
 # - add painting of a z measurements  
+
 
 class hpe2armcmd():
 
@@ -59,12 +54,10 @@ class hpe2armcmd():
 
         #f = open("{}-{}".format("jointPositions", datetime.now().strftime("%H:%M:%S"))
 
-
     def _init_subscribers(self):
 
         #self.hpe_3d_sub         = rospy.Subscriber("camera/color/image_raw", Image, self.hpe3d_cb, queue_size=1)
         self.hpe_3d_sub = rospy.Subscriber("upper_body_3d", TorsoJointPositions, self.hpe3d_cb, queue_size=1)
-
 
     def _init_publishers(self): 
 
@@ -76,19 +69,6 @@ class hpe2armcmd():
         self.cleft_arm_pub = rospy.Publisher("cart_left_arm", CartesianArmCmd, queue_size=1)
         self.cright_arm_pub = rospy.Publisher("cart_right_arm", CartesianArmCmd, queue_size=1)
 
-        self.robot_joy1_pub = rospy.Publisher("/wp_manipulator/joint1_position_controller/command", Float64, queue_size=1)
-        self.robot_joy2_pub = rospy.Publisher("/wp_manipulator/joint2_position_controller/command", Float64, queue_size=1)
-        self.robot_joy3_pub = rospy.Publisher("/wp_manipulator/joint3_position_controller/command", Float64, queue_size=1)
-        self.robot_joy4_pub = rospy.Publisher("/wp_manipulator/joint4_position_controller/command", Float64, queue_size=1)
-
-
-    def arrayToVect(self, array): 
-
-        v = Vector3()
-        v.x = array[0]
-        v.y = array[1]
-        v.z = array[2]
-        return v
 
     def hpe3d_cb(self, msg):
 
@@ -116,6 +96,7 @@ class hpe2armcmd():
         # recieved HPE 3D
         self.hpe3d_recv = True
 
+
     def publish_arm(self, pitch, roll, yaw, elbow, p_base_wrist, v_base_wrist, arm): 
 
         try: 
@@ -128,8 +109,8 @@ class hpe2armcmd():
             armCmdMsg.elbow.data            = float(elbow)
             cartArmCmdMsg = CartesianArmCmd()
             cartArmCmdMsg.header.stamp = rospy.Time().now()
-            cartArmCmdMsg.positionEE = self.arrayToVect(-1 * p_base_wrist)
-            cartArmCmdMsg.velocityEE = self.arrayToVect(v_base_wrist)
+            #cartArmCmdMsg.positionEE = self.arrayToVect(-1 * p_base_wrist) # Wrong pos, not neccessary now!
+            #cartArmCmdMsg.velocityEE = self.arrayToVect(v_base_wrist)
 
             if arm == "right": 
                 self.right_arm_pub.publish(armCmdMsg)
@@ -153,10 +134,7 @@ class hpe2armcmd():
         syawMsg.data = np.radians(syaw)
         elbowMsg = Float64()
         elbowMsg.data = np.radians(elbow)
-        self.robot_joy1_pub.publish(spitchMsg)
-        self.robot_joy2_pub.publish(srollMsg)
-        self.robot_joy3_pub.publish(syawMsg)
-        self.robot_joy4_pub.publish(elbowMsg)
+
 
     def send_transform(self, p_vect, parent_frame, child_frame):
 
@@ -174,24 +152,12 @@ class hpe2armcmd():
     def send_arm_transforms(self): 
 
         try:
-            self.send_transform(self.p_thorax_lshoulder, 
-                                "n_thorax", 
-                                "left_shoulder")
-            self.send_transform(self.p_shoulder_lelbow, 
-                                "left_shoulder",
-                                "left_elbow")
-            self.send_transform(self.p_elbow_lwrist, 
-                                "left_elbow", 
-                                "left_wrist")
-            self.send_transform(self.p_thorax_rshoulder, 
-                                "n_thorax", 
-                                "right_shoulder")
-            self.send_transform(self.p_shoulder_relbow, 
-                                "right_shoulder", 
-                                "right_elbow")
-            self.send_transform(self.p_elbow_rwrist, 
-                                "right_elbow", 
-                                "right_wrist")
+            self.send_transform(self.p_thorax_lshoulder, "n_thorax", "left_shoulder")
+            self.send_transform(self.p_shoulder_lelbow, "left_shoulder", "left_elbow")
+            self.send_transform(self.p_elbow_lwrist, "left_elbow", "left_wrist")
+            self.send_transform(self.p_thorax_rshoulder, "n_thorax", "right_shoulder")
+            self.send_transform(self.p_shoulder_relbow, "right_shoulder", "right_elbow")
+            self.send_transform(self.p_elbow_rwrist, "right_elbow", "right_wrist")
         except Exception as e: 
             rospy.logwarn("Sending arm transforms failed: {}".format(str(e)))
 
@@ -341,15 +307,6 @@ class hpe2armcmd():
         return pitch_, roll_, yaw_, elbow_
 
 
-    def limitCmd(self, cmd, upperLimit, lowerLimit):
-        if cmd > upperLimit: 
-            cmd = upperLimit
-        if cmd < lowerLimit: 
-            cmd = lowerLimit
-
-        return cmd
-
-
     def get_angle(self, p, plane="xy", rAxis = "x", format="degrees"): 
 
         # theta = cos-1 [ (a * b) / (abs(a) abs(b)) ]
@@ -374,6 +331,7 @@ class hpe2armcmd():
         num_decimals = 4
 
         return np.round(angle, num_decimals)
+
 
     def get_vect_angle(self, v1, v2, format="degrees"): 
 
@@ -433,7 +391,7 @@ class hpe2armcmd():
         
         first_filt = True
         while not rospy.is_shutdown(): 
-            # Multiple conditions neccessary to run program!
+
             run_ready = self.hpe3d_recv 
 
             if run_ready: 

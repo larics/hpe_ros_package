@@ -99,9 +99,6 @@ class HumanPose3D():
         
         rospy.loginfo("Initialized subscribers!")
 
-
-
-
     def _init_publishers(self): 
         self.left_wrist_pub     = rospy.Publisher("leftw_point", Vector3, queue_size=1)
         self.right_wrist_pub    = rospy.Publisher("rightw_point", Vector3, queue_size=1)
@@ -114,7 +111,6 @@ class HumanPose3D():
 
         self.img        = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, -1)
         self.img_recv   = True
-
 
     def pcl_cb(self, msg):
 
@@ -147,6 +143,7 @@ class HumanPose3D():
     def cinfo_cb(self, msg): 
 
         self.cinfo_recv = True
+
 
     def get_depths(self, pcl, indices, axis="z"):
 
@@ -200,29 +197,6 @@ class HumanPose3D():
             # Each of this tf-s is basically distance from camera_frame_name to some other coordinate frame :) 
             # use lookupTransform to fetch transform and estimate angles... 
 
-
-    # Write me a method for 
-
-    def plot_joint_states(self, msg):
-        # Copilot
-
-        pass
-
-
-            
-
-    def plot_depths(self, keypoints, depths): 
-
-        #pil_img = PILImage.fromarray(self.img.astype('uint8'), 'RGB')
-        #draw = ImageDraw.Draw(pil_img)
-        #draw.ellipse([(predictions[i][0] - point_r, predictions[i][1] - point_r), (predictions[i][0] + point_r, predictions[i][1] + point_r)], fill=fill_, width=2*point_r)
-        
-        pass
-
-    def record_movement(self): 
-
-        pass
-
     def debug_print(self): 
 
         if not self.img_recv:
@@ -233,7 +207,6 @@ class HumanPose3D():
             rospy.logwarn_throttle(1, "Camera info is not recieved! Check camera and topic name.")
         if not self.pred_recv: 
             rospy.logwarn_throttle(1, "Prediction is not recieved! Check topic names, camera type and model initialization!")
-
 
     def create_ROSmsg(self, pos_named): 
 
@@ -300,7 +273,6 @@ class HumanPose3D():
             except Exception as e: 
                 rospy.logwarn("Run failed: {}".format(e))
                 
-
 
 # Create Rotation matrices
 def get_RotX(angle): 
