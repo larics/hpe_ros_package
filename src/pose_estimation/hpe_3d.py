@@ -45,8 +45,8 @@ class HumanPose3D():
         #  A z
         #  |
         #  |
-        #  X -----> y
-        #  x goes down, y points right and z points from the camera viewpoint
+        #  X -----> x
+        #  x goes right, y points down and z points from the camera viewpoint
 
         self.init_x_rot = -90 - 30 # - 30 due to pitch
         self.init_y_rot = 0.0
@@ -198,9 +198,6 @@ class HumanPose3D():
 
                 # NEW P CALC
                 p = np.array([x[0], y[0], z[0]]) 
-
-                if i == 0: 
-                    rospy.loginfo("p: {}".format(p))
 
                 x_rot = self.init_x_rot
                 y_rot = self.init_y_rot
