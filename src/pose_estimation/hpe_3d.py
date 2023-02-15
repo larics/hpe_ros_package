@@ -41,6 +41,17 @@ class HumanPose3D():
         self.pred_recv          = False
         self.cinfo_recv         = False 
 
+        # Camera CF for depth (LENSES - Z direction)
+        #  A z
+        #  |
+        #  |
+        #  X -----> y
+        #  x goes down, y points right and z points from the camera viewpoint
+
+        self.init_x_rot = -90 - 30 # - 30 due to pitch
+        self.init_y_rot = 0.0
+        self.init_z_rot = -90
+
         # IF openpose: True, ELSE: False
         self.openpose = openpose
 
@@ -177,16 +188,50 @@ class HumanPose3D():
         for i, (x, y, z) in enumerate(zip(coords["x"], coords["y"], coords["z"])): 
             nan_cond =  not np.isnan(x) and not np.isnan(y) and not np.isnan(z)
             if nan_cond: 
-                # Swapped z, y, x to hit correct dimension
-                p = np.array([z[0], y[0], x[0]])
-                # Needs to be rotated for 90 deg around X axis
-                R = get_RotX(-np.pi/2) 
-                rotP = np.matmul(R, p)
-                # Y is in wrong direction therefore -rotP
-                kp_tf["{}".format(i)] = (rotP[0], -rotP[1], rotP[2])  
-                pos_named["{}".format(self.indexing[i])] = (rotP[0], -rotP[1], rotP[2])
+                
+                # OLD P 
+                #p = np.array([z[0], y[0], x[0]]) # Swapped z, y, x to hit correct dimension
+                #R = get_RotX(-np.pi/2)  # Needs to be rotated for 90 deg around X axis
+                #rotP = np.matmul(R, p)
+                #kp_tf["{}".format(i)] = (rotP[0], -rotP[1], rotP[2]) # Y is in wrong direction therefore -rotP
+                #pos_named["{}".format(self.indexing[i])] = (rotP[0], -rotP[1], rotP[2])
+
+                # NEW P CALC
+                p = np.array([x[0], y[0], z[0]]) 
+
+                if i == 0: 
+                    rospy.loginfo("p: {}".format(p))
+
+                x_rot = self.init_x_rot
+                y_rot = self.init_y_rot
+                z_rot = self.init_z_rot
+
+                p = self.getP(p, x_rot, y_rot, z_rot, "xyz", "degrees") # TF from camera frame to the orientation human HAS!
+                kp_tf["{}".format(i)] = p
+                pos_named["{}".format(self.indexing[i])] = p
+
+
+
 
         return kp_tf, pos_named
+
+    def getP(self, p, angle_x_axis, angle_y_axis, angle_z_axis, order, format="radians"):
+
+        if format == "degrees": 
+            angle_x_axis = np.radians(angle_x_axis)
+            angle_y_axis = np.radians(angle_y_axis)
+            angle_z_axis = np.radians(angle_z_axis)
+
+        for i in order:
+            if i == "x":
+                p = np.matmul(get_RotX(angle_x_axis), p)
+            elif i == "y":
+                p = np.matmul(get_RotY(angle_y_axis), p)
+            elif i == "z":
+                p = np.matmul(get_RotZ(angle_z_axis), p)
+        
+        return (p[0], p[1], p[2])
+
 
     def send_transforms(self, tfs):
 
@@ -250,7 +295,7 @@ class HumanPose3D():
             run_ready = self.img_recv and self.cinfo_recv and self.pcl_recv and self.pred_recv
             try:
                 if run_ready: 
-                    rospy.loginfo_throttle(10, "Publishing HPE3d!")
+                    rospy.loginfo_throttle(30, "Publishing HPE3d!")
                     # Maybe save indices for easier debugging
                     start_time = rospy.Time.now().to_sec()
                     # Get X,Y,Z coordinates for predictions
