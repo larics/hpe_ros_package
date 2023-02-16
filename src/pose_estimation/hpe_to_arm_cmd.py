@@ -10,9 +10,9 @@ import numpy as np
 
 from utils import *
 
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64, Float32
 from geometry_msgs.msg import Vector3
-from hpe_ros_msgs.msg import TorsoJointPositions, JointArmCmd, CartesianArmCmd
+from hpe_ros_msgs.msg import TorsoJointPositions, JointArmCmd, CartesianArmCmd, EstLinkLengths
 
 
 
@@ -31,6 +31,10 @@ class hpe2armcmd():
         self.rate = rospy.Rate(int(float(freq)))
 
         self.hpe3d_recv = False
+        self.calibrated = False
+
+        self.calib_lpitch = 0; self.calib_lroll = 0;  
+        self.calib_rpitch = 0; self.calib_rroll = 0; 
 
         # Initialize publishers and subscribers
         self._init_subscribers()
@@ -45,6 +49,10 @@ class hpe2armcmd():
                        "left_pitch": [], "left_roll": [], "left_yaw": [], "left_elbow": [],
                         "right_x": [], "right_y": [], "right_z": [], 
                         "left_x": [], "left_y": [], "left_z": []}
+        
+        self.calib_dict = {"right_pitch": [], "right_roll": [], 
+                           "left_pitch": [], "left_roll": []}
+
         self.prev = {}
 
         self.camera_frame_name = "camera_color_frame"
@@ -53,6 +61,8 @@ class hpe2armcmd():
         self.ntf_br = tf.TransformBroadcaster()
 
         rospy.loginfo("[Hpe3D] started!")
+
+        self.depth_detection_threshold = 0.002
 
         #f = open("{}-{}".format("jointPositions", datetime.now().strftime("%H:%M:%S"))
 
@@ -70,6 +80,8 @@ class hpe2armcmd():
         self.right_arm_pub = rospy.Publisher("right_arm", JointArmCmd, queue_size=1)
         self.cleft_arm_pub = rospy.Publisher("cart_left_arm", CartesianArmCmd, queue_size=1)
         self.cright_arm_pub = rospy.Publisher("cart_right_arm", CartesianArmCmd, queue_size=1)
+        self.norm_left_arm_pub = rospy.Publisher("norm_left_arm", EstLinkLengths, queue_size=1)
+        self.norm_right_arm_pub = rospy.Publisher("norm_right_arm", EstLinkLengths, queue_size=1)
 
 
     def hpe3d_cb(self, msg):
@@ -84,22 +96,57 @@ class hpe2armcmd():
         # Right arm
         self.p_base_rshoulder = self.createPvect(msg.right_shoulder)
         self.p_base_relbow = self.createPvect(msg.right_elbow)
-        self.p_base_rwrist = self.createPvect(msg.right_wrist)
+        self.p_base_rwrist = self.createPvect(msg.right_wrist)            
+
         # Broadcast this vects as new TFs
         # p_base_shoulder - p_base_neck
         # Left arm --> these are the vectors from which we should extract angles :) 
         self.p_thorax_lshoulder = (self.p_base_lshoulder - self.p_base_thorax) * (-1)
-        self.p_shoulder_lelbow = (self.p_base_lelbow - self.p_base_lshoulder) * (-1)
         self.p_elbow_lwrist = (self.p_base_lwrist - self.p_base_lelbow) * (-1)
+        self.p_shoulder_lelbow = (self.p_base_lelbow - self.p_base_lshoulder) * (-1)
         self.p_shoulder_lwrist = (self.p_base_lwrist - self.p_base_lshoulder) * (-1)
-        # Right arm 
+        
+        # Right arm --> This should prevent suddent jumps in reference!
         self.p_thorax_rshoulder = (self.p_base_rshoulder - self.p_base_thorax) * (-1)
-        self.p_shoulder_relbow = (self.p_base_relbow - self.p_base_rshoulder) * (-1)
         self.p_elbow_rwrist = (self.p_base_rwrist - self.p_base_relbow) * (-1)
+        self.p_shoulder_relbow = (self.p_base_relbow - self.p_base_rshoulder) * (-1)
         self.p_shoulder_rwrist = (self.p_base_rwrist - self.p_base_rshoulder) * (-1 )
+        
+        self.norm_p_s_lelbow = np.linalg.norm(self.p_shoulder_lelbow)
+        self.norm_p_s_relbow = np.linalg.norm(self.p_shoulder_relbow)
+        self.norm_p_e_lwrist = np.linalg.norm(self.p_elbow_lwrist)
+        self.norm_p_e_rwrist = np.linalg.norm(self.p_elbow_rwrist)
+        self.norm_p_s_lwrist = np.linalg.norm(self.p_shoulder_lwrist)
+        self.norm_p_s_rwrist = np.linalg.norm(self.p_shoulder_rwrist)
 
         # recieved HPE 3D
         self.hpe3d_recv = True
+
+    def publish_norms(self):
+        # Publish norms of the vectors
+        msg = Float32()
+        # Left arm
+        norm_links = 0.3
+        normMsg = EstLinkLengths()
+        normMsg.header.stamp = rospy.Time().now()
+        msg.data = self.norm_p_s_lelbow/norm_links
+        normMsg.shoulderElbow = copy.deepcopy(msg)
+        msg.data = self.norm_p_e_lwrist/norm_links
+        normMsg.elbowWrist = copy.deepcopy(msg)
+        msg.data = self.norm_p_s_lwrist/(2*norm_links)
+        normMsg.shoulderWrist = copy.deepcopy(msg)
+        self.norm_left_arm_pub.publish(normMsg)
+
+        # Right arm
+        normMsg = EstLinkLengths()
+        normMsg.header.stamp = rospy.Time().now()
+        msg.data = self.norm_p_s_relbow/norm_links
+        normMsg.shoulderElbow = copy.deepcopy(msg)
+        msg.data = self.norm_p_e_rwrist/norm_links
+        normMsg.elbowWrist = copy.deepcopy(msg)
+        msg.data = self.norm_p_s_rwrist/(2*norm_links)
+        normMsg.shoulderWrist = copy.deepcopy(msg)
+        self.norm_right_arm_pub.publish(normMsg) 
 
 
     def publish_arm(self, pitch, roll, yaw, elbow, p_shoulder_wrist, v_shoulder_wrist, arm): 
@@ -271,10 +318,6 @@ class hpe2armcmd():
             return measurement
         else:
             prev = self.m_dict["{}".format(var_name)][-1] 
-
-            # Too large change in measurement -> ignore it (more than 30 deg)
-            if measurement - prev > 0.52: 
-                measurement = prev
             
             self.m_dict["{}".format(var_name)] = self.m_dict["{}".format(var_name)][-window_size:]
             avg  = sum(self.m_dict["{}".format(var_name)])/len(self.m_dict["{}".format(var_name)])
@@ -346,7 +389,7 @@ class hpe2armcmd():
             z = self.filter_avg(z, window_size, "{}_z".format(arm))
 
         if filter_type == "median":
-            window_size = 7
+            window_size = 5
             x = self.filter_median(x, window_size, "{}_x".format(arm))
             y = self.filter_median(y, window_size, "{}_y".format(arm))
             z = self.filter_median(z, window_size, "{}_z".format(arm))
@@ -453,24 +496,31 @@ class hpe2armcmd():
 
                 # Send transforms
                 self.send_arm_transforms()
+                self.publish_norms()
+
+                #if self.norm_p_s_lwrist > 1.5 or self.norm_p_s_rwrist > 1.5: 
+                #    continue 
 
                 # Filtering!
-                filtering = "avg"; 
+                filtering = "nothing"; 
                 if filtering == "avg":                    
                     lpitch, lroll, lyaw, lelbow = self.filter_arm(lpitch, lroll, lyaw, lelbow, "left", "avg")
                     rpitch, rroll, ryaw, relbow = self.filter_arm(rpitch, rroll, ryaw, relbow, "right", "avg")
-                    p_shoulder_lwrist = self.filter_cartesian(self.p_shoulder_lwrist[0], self.p_shoulder_lwrist[1], self.p_shoulder_lwrist[2], "left", "avg")
-                    p_shoulder_rwrist = self.filter_cartesian(self.p_shoulder_rwrist[0], self.p_shoulder_rwrist[1], self.p_shoulder_rwrist[2], "right", "avg")
-                    #rospy.loginfo("left_arm: {}".format(p_shoulder_lwrist))
-                    #rospy.loginfo("right_arm: {}".format(p_shoulder_rwrist))
+                    p_shoulder_lwrist = self.filter_cartesian(self.p_shoulder_lwrist[0], self.p_shoulder_lwrist[1], self.p_shoulder_lwrist[2], "left", "median")
+                    p_shoulder_rwrist = self.filter_cartesian(self.p_shoulder_rwrist[0], self.p_shoulder_rwrist[1], self.p_shoulder_rwrist[2], "right", "median")
 
                 if filtering == "lowpass": 
                     lpitch, lroll, lyaw, lelbow = self.filter_arm(lpitch, lroll, lyaw, lelbow, "left", "lowpass", first_filt)
                     rpitch, rroll, ryaw, relbow = self.filter_arm(rpitch, rroll, ryaw, relbow, "right", "lowpass", first_filt)
-                    first_filt = False                            
+                    first_filt = False             
+
+                else: 
+                    p_shoulder_lwrist = self.p_shoulder_lwrist
+                    p_shoulder_rwrist = self.p_shoulder_rwrist               
 
                 # get EE velocity --> Decouple
                 self.get_arm_velocities()
+
 
                 # publish vals for following
                 self.publish_arm(lpitch, lroll, lyaw, lelbow, p_shoulder_lwrist, self.p_shoulder_lwrist, "left")
@@ -492,4 +542,7 @@ class hpe2armcmd():
 if __name__ == "__main__": 
 
     hpe2armcmd_ = hpe2armcmd(sys.argv[1])
-    hpe2armcmd_.run()
+    try:
+        hpe2armcmd_.run()
+    except Exception as e: 
+        rospy.logerr("Failed run hpe2armcmd: {}".format(e))

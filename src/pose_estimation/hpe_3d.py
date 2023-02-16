@@ -48,8 +48,8 @@ class HumanPose3D():
         #  X -----> x
         #  x goes right, y points down and z points from the camera viewpoint
 
-        self.init_x_rot = -90 - 30 # - 30 due to pitch
-        self.init_y_rot = 0.0
+        self.init_x_rot = -90 - 40 # - 30 due to pitch
+        self.init_y_rot = 0
         self.init_z_rot = -90
 
         # IF openpose: True, ELSE: False
