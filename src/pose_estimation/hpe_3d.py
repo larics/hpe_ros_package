@@ -102,12 +102,12 @@ class HumanPose3D():
         self.depth_cinfo_sub    = rospy.Subscriber("camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
        
         if self.openpose: 
-            self.predictions_sub    = rospy.Subscriber("/frame", Frame, self.pred_cb, queue_size=1)
-            #self.predictions_sub    = message_filters.Subscriber("/frame", Frame)
-            #self.depth_sub          = message_filters.Subscriber("camera/depth_registered/points", PointCloud2)
+            #self.predictions_sub    = rospy.Subscriber("/frame", Frame, self.pred_cb, queue_size=1)
+            self.predictions_sub    = message_filters.Subscriber("/frame", Frame)
+            self.depth_sub          = message_filters.Subscriber("camera/depth_registered/points", PointCloud2)
             # Doesn't matter! 
-            #self.ats                = message_filters.ApproximateTimeSynchronizer([self.predictions_sub, self.depth_sub], queue_size=10, slop=0.05)
-            #self.ats.registerCallback(self.frame_pcl_cb)
+            self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 10)
+            self.ats.registerCallback(self.frame_pcl_cb)
 
 
         else: 
@@ -121,6 +121,28 @@ class HumanPose3D():
         self.upper_body_3d_pub  = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
         
         rospy.loginfo("Initialized publishers!")
+
+
+    def frame_pcl_cb(self, frame_msg, pcl_msg): 
+
+        #keypoints = msg.data
+        rospy.loginfo("Received frame and pcl!")
+        persons = frame_msg.persons
+        self.predictions = []
+        self.pose_predictions = []
+
+        if self.openpose:
+            for i, person in enumerate(persons): 
+                if i == 0: 
+                    for bodypart in person.bodyParts: 
+                        self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
+                        self.pose_predictions.append((bodypart.point.x, bodypart.point.y, bodypart.point.z))
+            
+            self.predictions = self.predictions[:18]
+            self.pred_recv = True
+
+        self.pcl        = pcl_msg
+        self.pcl_recv   = True    
 
 
     def image_cb(self, msg): 
