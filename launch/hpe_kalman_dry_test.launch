@@ -1,0 +1,15 @@
+<launch>
+
+    <arg name="frequency" value="15"/>
+    <arg name="bag_path" value="/home/developer"/>
+    <arg name="bag_name" value="hpe_openpose.bag"/>
+
+    <!-- play rosbag containing extracted 3d pose of the body --> <!--output="screen" /-->
+
+    <!--node pkg="rosbag" type="play" name="player" output="screen" args="clock /$(arg bag_path)/$(arg bag_name)"/-->
+    <node pkg="rosbag" type="play" name="player" args="/$(arg bag_path)/$(arg bag_name)"/> <!--output="screen"-->
+    
+    <!-- Run kalman -->
+    <node name="kalman_filter" pkg="hpe_ros_package" type="kalman.py" args="$(arg frequency)" output="screen" />
+
+</launch>
