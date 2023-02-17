@@ -1,8 +1,9 @@
 <launch>
 
-<arg name="frequency" value="30"/>
+<arg name="frequency" value="25"/>
 <arg name="depth_cam" value="false"/>
 <arg name="openpose" default="true"/>
+<arg name="kalman" default="true"/>
 
 
 <!-- Depth extraction node --> <!-- maybe not neccessary if using OpenPose -->
@@ -14,6 +15,9 @@
 <!-- Transform HPE to UAV CMD -->
 <!--node name="hpe_uav_node" pkg="hpe_ros_package" type="hpe_to_uav_cmd.py" args="$(arg frequency)" output="screen"/-->
 
-<node name="kalman_filter" pkg="hpe_ros_package" type="kalman.py" args="$(arg frequency)" output="screen" />
+<!-- Run kalman -->
+<group if="($arg kalman)">
+    <node name="kalman_filter" pkg="hpe_ros_package" type="kalman.py" args="$(arg frequency)" output="screen" />
+</group>
 
 </launch>

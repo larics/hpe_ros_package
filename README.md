@@ -45,6 +45,8 @@ Code for the acore and EPFL experiments contains decoupled launch files for easi
  - [x] Publish Cartesian tooltip position (r_wrist, l_wrist) 
  - [x] Integrate with [antrop_arms](https://github.com/larics/antrop_arms_ros)
  - [x] Finish depth control (pitch/depth control)
- - [ ] Implement inverse kinematics
- - [ ] Find appropriate filtering method 
- - [ ] Incoroporate with aerial manipulator control 
+ - [ ] Implement inverse kinematics 
+ - [x] Find appropriate filtering method --> median, avg and lowpass implemented 
+ - [x] Incoroporate with aerial manipulator control 
+ - [ ] Find Kalman filter measurement and process covariances  
+ - [ ] Add message_synchronizer for PCL and detection
