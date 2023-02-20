@@ -147,14 +147,12 @@ class KalmanFilterPy():
 
     def run(self): 
 
-
         while not rospy.is_shutdown():
 
             run_ready = self.recv_right_arm and self.recv_left_arm
 
-
             if run_ready: 
-                rospy.loginfo("Publishing")
+                rospy.loginfo_throttle(30, "Kalman filter running")
                 self.kalman_right_arm_pub.publish(self.kalmanRightArmMsg)
                 self.kalman_left_arm_pub.publish(self.kalmanLeftArmMsg) 
                 self.rate.sleep()
