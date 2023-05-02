@@ -8,6 +8,7 @@ import tf
 import numpy as np
 
 from std_msgs.msg import Float64MultiArray, Float32
+from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Vector3
 from hpe_ros_package.msg import TorsoJointPositions
 from geometry_msgs.msg import PoseStamped, Pose
@@ -29,11 +30,13 @@ class hpe2uavcmd():
 
         # Recv var
         self.hpe3d_recv = False
+        self.uav_pose_recv = False
         # Calibration vars
         self.calib_first = True
         self.p_list = []
 
-        self.pose_sub_name = "/uav/pose"
+        self.pose_sub_name = "/hawk1/vrpn_client/estimated_odometry"
+        self.pose_pub_name = "/red/tracker/input_pose"
         
         # Initialize publishers and subscribers
         self._init_subscribers()
@@ -49,19 +52,20 @@ class hpe2uavcmd():
     def _init_subscribers(self):
 
         self.hpe_3d_sub = rospy.Subscriber("upper_body_3d", TorsoJointPositions, self.hpe3d_cb, queue_size=1)
-        self.pos_sub = rospy.Subscriber(self.pose_sub_name, PoseStamped, self.pos_cb, queue_size=1)
+        self.pos_sub = rospy.Subscriber(self.pose_sub_name, Odometry, self.pos_cb, queue_size=1)
 
     def _init_publishers(self):
 
         # self.q_pos_cmd_pub = rospy.Publisher("")
         # TODO: Add publisher for publishing joint angles
         self.gen_r_pub = rospy.Publisher("/uav/r", Vector3, queue_size=10)
-        self.pos_pub = rospy.Publisher("/uav/pose_ref", Pose, queue_size=10)
+        self.pos_pub = rospy.Publisher(self.pose_pub_name, PoseStamped, queue_size=10)
         self.marker_pub = rospy.Publisher("ctl/viz", Marker, queue_size=10)
         self.cb_point_marker_pub = rospy.Publisher("ctl/cb_point", Marker, queue_size=10)    
 
     def hpe3d_cb(self, msg):
-
+        
+        rospy.loginfo_once("Recieved HPE!")
         # Msg has header, use it for timestamping
         self.hpe3d_recv_t = msg.header.stamp  # -> to system time
         # Extract data --> Fix pBaseNeck
@@ -71,11 +75,12 @@ class hpe2uavcmd():
         self.hpe3d_recv = True
 
     def pos_cb(self, msg):
-
-        self.pos_recv = True
+        
+        rospy.loginfo_once("Recieved UAV pose!")
+        self.uav_pose_recv = True
         self.currentPose = PoseStamped()
         self.currentPose.header = msg.header
-        self.currentPose.pose = msg.pose
+        self.currentPose.pose = msg.pose.pose
 
     def createPvect(self, msg):
         # Create position vector from Vector3
@@ -93,7 +98,7 @@ class hpe2uavcmd():
             rospy.loginfo("Calibration procedure running {}".format(elapsed))
             self.calib_first = False
             self.p_list.append(self.p_base_lwrist)
-            return False
+            return False 
 
         else:
             rospy.loginfo("Calibration procedure finished!")
@@ -142,13 +147,13 @@ class hpe2uavcmd():
         # X,Y are swapped because CFs of UAV and World are rotated for 90 degs
         if R > abs(dist_y) > r:
             rospy.logdebug("Y: {}".format(dist_x))
-            self.body_ctl.x = dist_y
+            self.body_ctl.x = -dist_x
         else:
             self.body_ctl.x = 0
 
         if R > abs(dist_x) > r:
             rospy.logdebug("X: {}".format(dist_y))
-            self.body_ctl.y = dist_x
+            self.body_ctl.y = dist_y
         else:
             self.body_ctl.y = 0
 
@@ -158,11 +163,13 @@ class hpe2uavcmd():
         else:
             self.body_ctl.z = 0
 
-        scaling_x = 0.3; scaling_y = 0.3; scaling_z = 0.1;
-        pos_ref = Pose()
-        pos_ref.position.x = self.currentPose.pose.position.x + self.body_ctl.x * scaling_x
-        pos_ref.position.y = self.currentPose.pose.position.y + self.body_ctl.y * scaling_y
-        pos_ref.position.z = self.currentPose.pose.position.z + self.body_ctl.z * scaling_z
+        scaling_x = 3.0; scaling_y = 3.0; scaling_z = 1.0;
+        pos_ref = PoseStamped()
+        pos_ref.header.stamp = rospy.Time.now()
+        pos_ref.pose.position.x = self.currentPose.pose.position.x + self.body_ctl.x * scaling_x
+        pos_ref.pose.position.y = self.currentPose.pose.position.y + self.body_ctl.y * scaling_y
+        pos_ref.pose.position.z = self.currentPose.pose.position.z + self.body_ctl.z * scaling_z
+        pos_ref.pose.orientation = self.currentPose.pose.orientation
         
         self.pos_pub.publish(pos_ref)
         self.gen_r_pub.publish(self.body_ctl)
@@ -192,18 +199,12 @@ class hpe2uavcmd():
                 calibrated = self.calibrate(calibration_timeout)
 
             # We can start control if we have calibrated point
-            if run_ready and calibrated:
+            if run_ready and calibrated and self.uav_pose_recv:
+                rospy.loginfo_throttle(1, "Started H2AMI control!")
                 r_ = 0.05
-                R_ = 0.35
+                R_ = 0.5
                 # Deadzone is 
                 self.run_ctl(r_, R_)
-                
-                # Publish markers
-                cbMarker = self.create_marker(Marker.SPHERE, self.calib_point.x, 
-                                              self.calib_point.y, self.calib_point.z, 
-                                              0.1, 0.1, 0.1)
-                self.cb_point_marker_pub.publish(cbMarker)
-
 
             self.rate.sleep()
 

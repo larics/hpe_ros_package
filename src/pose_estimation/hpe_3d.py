@@ -48,7 +48,7 @@ class HumanPose3D():
         #  X -----> x
         #  x goes right, y points down and z points from the camera viewpoint
 
-        self.init_x_rot = -90 + 15 # DroneDays 15 deg looking above
+        self.init_x_rot = -90 #+ 15 # DroneDays 15 deg looking above
         self.init_y_rot = 0
         self.init_z_rot = -90
 

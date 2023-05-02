@@ -1,13 +1,14 @@
 <launch>
 
-<arg name="frequency" value="25"/>
+<arg name="hpe3d_frequency" value="25"/>
+<arg name="frequency" value="5"/>
 <arg name="depth_cam" value="false"/>
 <arg name="openpose" default="true"/>
 <arg name="kalman" default="false"/>
 
 
 <!-- Depth extraction node --> <!-- maybe not neccessary if using OpenPose -->
-<node name="depth_extraction_node" pkg="hpe_ros_package" type="hpe_3d.py" args="$(arg frequency) $(arg openpose)" output="screen" />
+<node name="depth_extraction_node" pkg="hpe_ros_package" type="hpe_3d.py" args="$(arg hpe3d_frequency) $(arg openpose)" output="screen" />
 
 <!-- Transform HPE to ARM CMD -->
 <!--node name="hpe_arm_node" pkg="hpe_ros_package" type="hpe_to_arm_cmd.py" args="$(arg frequency)" output="screen" /-->
