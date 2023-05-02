@@ -48,12 +48,12 @@ class HumanPose3D():
         #  X -----> x
         #  x goes right, y points down and z points from the camera viewpoint
 
-        self.init_x_rot = -90 - 40 # - 30 due to pitch
+        self.init_x_rot = -90 + 15 # DroneDays 15 deg looking above
         self.init_y_rot = 0
         self.init_z_rot = -90
 
         # IF openpose: True, ELSE: False
-        self.openpose = openpose
+        self.openpose = True
 
         if self.openpose: 
             self.body25 = True
@@ -102,12 +102,13 @@ class HumanPose3D():
         self.depth_cinfo_sub    = rospy.Subscriber("camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
        
         if self.openpose: 
-            #self.predictions_sub    = rospy.Subscriber("/frame", Frame, self.pred_cb, queue_size=1)
-            self.predictions_sub    = message_filters.Subscriber("/frame", Frame)
-            self.depth_sub          = message_filters.Subscriber("camera/depth_registered/points", PointCloud2)
+            rospy.loginfo("Initializing openpose subscribers!")
+            self.predictions_sub    = rospy.Subscriber("/frame", Frame, self.pred_cb, queue_size=1)
+            #self.predictions_sub    = message_filters.Subscriber("/frame", Frame)
+            #self.depth_sub          = message_filters.Subscriber("camera/depth_registered/points", PointCloud2)
             # Doesn't matter! 
-            self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 10)
-            self.ats.registerCallback(self.frame_pcl_cb)
+            #self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 10)
+            #self.ats.registerCallback(self.frame_pcl_cb)
 
 
         else: 

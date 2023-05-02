@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python2
 
 import os
 import sys
@@ -33,6 +33,8 @@ class hpe2uavcmd():
         self.calib_first = True
         self.p_list = []
 
+        self.pose_sub_name = "/uav/pose"
+        
         # Initialize publishers and subscribers
         self._init_subscribers()
         self._init_publishers()
@@ -46,24 +48,17 @@ class hpe2uavcmd():
 
     def _init_subscribers(self):
 
-        # self.hpe_3d_sub         = rospy.Subscriber("camera/color/image_raw", Image, self.hpe3d_cb, queue_size=1)
         self.hpe_3d_sub = rospy.Subscriber("upper_body_3d", TorsoJointPositions, self.hpe3d_cb, queue_size=1)
-        self.pos_sub = rospy.Subscriber("/uav/pose", PoseStamped, self.pos_cb, queue_size=1)
+        self.pos_sub = rospy.Subscriber(self.pose_sub_name, PoseStamped, self.pos_cb, queue_size=1)
 
     def _init_publishers(self):
 
         # self.q_pos_cmd_pub = rospy.Publisher("")
         # TODO: Add publisher for publishing joint angles
-        # CMD publishers
-        # Publish commands :)
-        # self.roll_pub = rospy.Publisher("roll")
-        # self.pitch_pub = rospy.Publisher("pitch")
-        # self.yaw_pub = rospy.Publisher("yaw")
-        # self.height_pub = rospy.Publisher("height")
-        self.gen_r_pub = rospy.Publisher("/uav/r", Vector3)
-        self.pos_pub = rospy.Publisher("/uav/pose_ref", Pose)
-        self.marker_pub = rospy.Publisher("ctl/viz", Marker)
-        self.cb_point_marker_pub = rospy.Publisher("ctl/cb_point", Marker)    
+        self.gen_r_pub = rospy.Publisher("/uav/r", Vector3, queue_size=10)
+        self.pos_pub = rospy.Publisher("/uav/pose_ref", Pose, queue_size=10)
+        self.marker_pub = rospy.Publisher("ctl/viz", Marker, queue_size=10)
+        self.cb_point_marker_pub = rospy.Publisher("ctl/cb_point", Marker, queue_size=10)    
 
     def hpe3d_cb(self, msg):
 
