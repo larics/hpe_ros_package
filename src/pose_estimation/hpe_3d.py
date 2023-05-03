@@ -25,7 +25,6 @@ import sensor_msgs.point_cloud2 as pc2
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
 # - add painting of a z measurements  
 # - Record bag of l shoulder, r shoulder and rest of the body parts 
-# - 
 
 class HumanPose3D(): 
 
@@ -54,6 +53,7 @@ class HumanPose3D():
 
         # IF openpose: True, ELSE: False
         self.openpose = True
+        self.sync = False
 
         if self.openpose: 
             self.body25 = True
@@ -97,19 +97,19 @@ class HumanPose3D():
 
     def _init_subscribers(self):
 
-        self.camera_sub = rospy.Subscriber("camera/color/image_raw", Image, self.image_cb, queue_size=1)
-        self.depth_sub = rospy.Subscriber("camera/depth_registered/points", PointCloud2, self.pcl_cb, queue_size=1)
+        self.camera_sub         = rospy.Subscriber("camera/color/image_raw", Image, self.image_cb, queue_size=1)
+        self.depth_sub          = rospy.Subscriber("camera/depth_registered/points", PointCloud2, self.pcl_cb, queue_size=1)
         self.depth_cinfo_sub    = rospy.Subscriber("camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
        
         if self.openpose: 
             rospy.loginfo("Initializing openpose subscribers!")
             self.predictions_sub    = rospy.Subscriber("/frame", Frame, self.pred_cb, queue_size=1)
-            #self.predictions_sub    = message_filters.Subscriber("/frame", Frame)
-            #self.depth_sub          = message_filters.Subscriber("camera/depth_registered/points", PointCloud2)
-            # Doesn't matter! 
-            #self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 10)
-            #self.ats.registerCallback(self.frame_pcl_cb)
 
+            if self.sync:
+                self.predictions_sub    = message_filters.Subscriber("/frame", Frame)
+                self.depth_sub          = message_filters.Subscriber("camera/depth_registered/points", PointCloud2) 
+                self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 10)
+                self.ats.registerCallback(self.frame_pcl_cb)
 
         else: 
             self.predictions_sub    = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
@@ -122,7 +122,6 @@ class HumanPose3D():
         self.upper_body_3d_pub  = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
         
         rospy.loginfo("Initialized publishers!")
-
 
     def frame_pcl_cb(self, frame_msg, pcl_msg): 
 
@@ -163,15 +162,17 @@ class HumanPose3D():
         self.predictions = []
         self.pose_predictions = []
 
+        # There's no way to determine which person we're targeting!
         if self.openpose:
             for i, person in enumerate(persons): 
+                # Detect only one person (closest one)
                 if i == 0: 
                     for bodypart in person.bodyParts: 
                         self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
                         self.pose_predictions.append((bodypart.point.x, bodypart.point.y, bodypart.point.z))
             
-            self.predictions = self.predictions[:18]
-            self.pred_recv = True
+                    self.predictions = self.predictions[:18]
+                    self.pred_recv = True
         else: 
             # pair elements
             self.predictions = [(int(keypoints[i]), int(keypoints[i + 1])) for i in range(0, len(keypoints), 2)]
@@ -182,7 +183,6 @@ class HumanPose3D():
     def cinfo_cb(self, msg): 
 
         self.cinfo_recv = True
-
 
     def get_depths(self, pcl, indices, axis="z"):
 
@@ -229,9 +229,6 @@ class HumanPose3D():
                 p = self.getP(p, x_rot, y_rot, z_rot, "xyz", "degrees") # TF from camera frame to the orientation human HAS!
                 kp_tf["{}".format(i)] = p
                 pos_named["{}".format(self.indexing[i])] = p
-
-
-
 
         return kp_tf, pos_named
 
@@ -369,43 +366,7 @@ def get_RotZ(angle):
     return RZ
 
 
-
 if __name__ == "__main__": 
 
     hpe3D = HumanPose3D(sys.argv[1], sys.argv[2])
     hpe3D.run()
-
-
-
-"""
-    def image_pcl_cb(self, img_msg, pcl_msg): 
-        
-        rospy.loginfo("Received image and pcl!")
-        self.img        = np.frombuffer(img_msg.data, dtype=np.uint8).reshape(img_msg.height, img_msg.width, -1)
-        self.img_recv   = True
-
-        self.pcl        = pcl_msg
-        self.pcl_recv   = True
-
-    def frame_pcl_cb(self, frame_msg, pcl_msg): 
-
-        #keypoints = msg.data
-        rospy.loginfo("Received frame and pcl!")
-        persons = frame_msg.persons
-        self.predictions = []
-        self.pose_predictions = []
-
-        if self.openpose:
-            for i, person in enumerate(persons): 
-                if i == 0: 
-                    for bodypart in person.bodyParts: 
-                        self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
-                        self.pose_predictions.append((bodypart.point.x, bodypart.point.y, bodypart.point.z))
-            
-            self.predictions = self.predictions[:18]
-            self.pred_recv = True
-
-        self.pcl        = pcl_msg
-        self.pcl_recv   = True    
-
-"""

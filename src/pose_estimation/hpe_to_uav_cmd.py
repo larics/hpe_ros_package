@@ -1,5 +1,4 @@
 #!/usr/bin/python2
-
 import os
 import sys
 
@@ -14,7 +13,6 @@ from hpe_ros_package.msg import TorsoJointPositions
 from geometry_msgs.msg import PoseStamped, Pose
 from visualization_msgs.msg import Marker
 
-
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
 # - Read camera_info
@@ -27,6 +25,7 @@ class hpe2uavcmd():
         rospy.init_node("hpe2cmd", log_level=rospy.DEBUG)
 
         self.rate = rospy.Rate(int(float(freq)))
+        self.calib_rate = rospy.Rate(int(float(10)))
 
         # Recv var
         self.hpe3d_recv = False
@@ -35,6 +34,7 @@ class hpe2uavcmd():
         self.calib_first = True
         self.p_list = []
 
+        # Real UAV params (Optitrack)
         self.pose_sub_name = "/hawk1/vrpn_client/estimated_odometry"
         self.pose_pub_name = "/red/tracker/input_pose"
         
@@ -70,7 +70,6 @@ class hpe2uavcmd():
         self.hpe3d_recv_t = msg.header.stamp  # -> to system time
         # Extract data --> Fix pBaseNeck
         self.p_base_lwrist = self.createPvect(msg.left_wrist)
-
         # recieved HPE 3D
         self.hpe3d_recv = True
 
@@ -105,6 +104,9 @@ class hpe2uavcmd():
             x = [p[0] for p in self.p_list]
             y = [p[1] for p in self.p_list]
             z = [p[2] for p in self.p_list]
+            rospy.loginfo("x meas: {}".format(x))
+            rospy.loginfo("y meas: {}".format(y))
+            rospy.loginfo("z meas: {}".format(z))
             self.calib_point = Vector3()
             self.calib_point.x = sum(x)/len(x)
             self.calib_point.y = sum(y)/len(y)
@@ -142,37 +144,38 @@ class hpe2uavcmd():
         dist_y = (self.p_base_lwrist[1] - self.calib_point.y ) 
         dist_z = (self.p_base_lwrist[2] - self.calib_point.z ) 
 
-        self.body_ctl = Vector3()
+        body_ctl = Vector3()
+        pos_ref = PoseStamped()
+
 
         # X,Y are swapped because CFs of UAV and World are rotated for 90 degs
-        if R > abs(dist_y) > r:
-            rospy.logdebug("Y: {}".format(dist_x))
-            self.body_ctl.x = -dist_x
-        else:
-            self.body_ctl.x = 0
-
         if R > abs(dist_x) > r:
-            rospy.logdebug("X: {}".format(dist_y))
-            self.body_ctl.y = dist_y
+            body_ctl.x = -dist_x
+            rospy.logdebug("x: {}".format(body_ctl.x))
         else:
-            self.body_ctl.y = 0
+            body_ctl.x = 0
+
+        if R > abs(dist_y) > r:
+            body_ctl.y = -dist_y
+            rospy.logdebug("y: {}".format(body_ctl.y))
+        else:
+            body_ctl.y = 0
 
         if R > abs(dist_z) > r:
-            rospy.logdebug("Z: {}".format(dist_z))
-            self.body_ctl.z = dist_z
+            body_ctl.z = dist_z
+            rospy.logdebug("z: {}".format(body_ctl.z))
         else:
-            self.body_ctl.z = 0
+            body_ctl.z = 0
 
         scaling_x = 3.0; scaling_y = 3.0; scaling_z = 1.0;
-        pos_ref = PoseStamped()
         pos_ref.header.stamp = rospy.Time.now()
-        pos_ref.pose.position.x = self.currentPose.pose.position.x + self.body_ctl.x * scaling_x
-        pos_ref.pose.position.y = self.currentPose.pose.position.y + self.body_ctl.y * scaling_y
-        pos_ref.pose.position.z = self.currentPose.pose.position.z + self.body_ctl.z * scaling_z
+        pos_ref.pose.position.x = self.currentPose.pose.position.x + body_ctl.x * scaling_x
+        pos_ref.pose.position.y = self.currentPose.pose.position.y + body_ctl.y * scaling_y
+        pos_ref.pose.position.z = self.currentPose.pose.position.z + body_ctl.z * scaling_z
         pos_ref.pose.orientation = self.currentPose.pose.orientation
         
         self.pos_pub.publish(pos_ref)
-        self.gen_r_pub.publish(self.body_ctl)
+        self.gen_r_pub.publish(body_ctl)
 
         # ARROW to visualize direction of a command
         arrowMsg = self.create_marker(Marker.ARROW, self.calib_point.x, self.calib_point.y, self.calib_point.z, 
@@ -181,9 +184,7 @@ class hpe2uavcmd():
 
         debug = False
         if debug:
-            rospy.loginfo("Dist z: {}".format(dist_z))
-            rospy.loginfo("Publishing z: {}".format(pos_ref.z))
-            rospy.loginfo("dx: {}\t dy: {}\t dz: {}\t".format(dist_x, dist_y, dist_z))
+            rospy.loginfo("dx: {}\t dy: {}\t dz: {}\t".format(-dist_x, dist_y, dist_z))
 
     def run(self):
 
@@ -195,8 +196,9 @@ class hpe2uavcmd():
 
             # First run condition
             if run_ready and not calibrated:
-
+                # Calibrate with different frequency than run 
                 calibrated = self.calibrate(calibration_timeout)
+                self.calib_rate.sleep() 
 
             # We can start control if we have calibrated point
             if run_ready and calibrated and self.uav_pose_recv:
@@ -205,8 +207,7 @@ class hpe2uavcmd():
                 R_ = 0.5
                 # Deadzone is 
                 self.run_ctl(r_, R_)
-
-            self.rate.sleep()
+                self.rate.sleep()
 
 
 
