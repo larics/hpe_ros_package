@@ -12,6 +12,7 @@ from geometry_msgs.msg import Vector3
 from hpe_ros_package.msg import TorsoJointPositions
 from geometry_msgs.msg import PoseStamped, Pose
 from visualization_msgs.msg import Marker
+from sensor_msgs.msg import Image
 
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
@@ -80,6 +81,7 @@ class hpe2uavcmd():
         self.currentPose = PoseStamped()
         self.currentPose.header = msg.header
         self.currentPose.pose = msg.pose.pose
+
 
     def createPvect(self, msg):
         # Create position vector from Vector3

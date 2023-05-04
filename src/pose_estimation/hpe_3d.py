@@ -53,7 +53,8 @@ class HumanPose3D():
 
         # IF openpose: True, ELSE: False
         self.openpose = True
-        self.sync = False
+        self.sync = True
+        self.plot = True
 
         if self.openpose: 
             self.body25 = True
@@ -62,7 +63,7 @@ class HumanPose3D():
         else: 
             self.coco = True
             self.body25 = False
-            self.mpii = False
+            self.mpii = False 
 
         # Initialize publishers and subscribers
         self._init_subscribers()
@@ -120,6 +121,7 @@ class HumanPose3D():
         self.left_wrist_pub     = rospy.Publisher("leftw_point", Vector3, queue_size=1)
         self.right_wrist_pub    = rospy.Publisher("rightw_point", Vector3, queue_size=1)
         self.upper_body_3d_pub  = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
+        self.skelet_pub = rospy.Publisher("skeleton", Image, queue_size=1)
         
         rospy.loginfo("Initialized publishers!")
 
@@ -138,7 +140,7 @@ class HumanPose3D():
                         self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
                         self.pose_predictions.append((bodypart.point.x, bodypart.point.y, bodypart.point.z))
             
-            self.predictions = self.predictions[:18]
+            self.predictions = self.predictions[:20]
             self.pred_recv = True
 
         self.pcl        = pcl_msg
@@ -171,7 +173,7 @@ class HumanPose3D():
                         self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
                         self.pose_predictions.append((bodypart.point.x, bodypart.point.y, bodypart.point.z))
             
-                    self.predictions = self.predictions[:18]
+                    self.predictions = self.predictions[:20]
                     self.pred_recv = True
         else: 
             # pair elements
@@ -332,7 +334,12 @@ class HumanPose3D():
                         rospy.logdebug("Run t: {}".format(duration)) # --> very fast!
 
                     self.rate.sleep()
-
+                
+                if run_ready and self.plot: 
+                    pil_img = PILImage.fromarray(self.img.astype('uint8'), 'RGB')
+                    stickman_img = draw_body25_stickman(pil_img, self.predictions)
+                    ros_img = convert_pil_to_ros_img(stickman_img)
+                    self.skelet_pub.publish(ros_img)
 
                 else: 
 
@@ -364,6 +371,30 @@ def get_RotZ(angle):
                    [ 0, 0, 1]] )
     
     return RZ
+
+def draw_body25_stickman(img, predictions): 
+
+    draw = ImageDraw.Draw(img)
+
+
+    skeleton = [[0, 1], [1, 2], [1, 3], [3, 4], [2, 3], [1, 5], [5, 6], [6, 7], [1, 8],
+                 [8, 9], [8, 12], [0, 15], [0, 16], [15, 17], [16, 18], [12, 13], [9, 10]]
+    point_r = 5
+    fill_ = (153, 255, 255)
+
+        # Draw points:
+    for i, pred in enumerate(predictions): 
+        draw.ellipse([(pred[0] - point_r, pred[1] - point_r),
+                     (pred[0] + point_r, pred[1] + point_r)], fill=fill_, width=2*point_r)
+
+    for i, skelet in enumerate(skeleton): 
+        draw.line([(predictions[skelet[0]][0], predictions[skelet[0]][1]),
+                    (predictions[skelet[1]][0], predictions[skelet[1]][1])], fill=(50, i*10, 200), width=5)
+        
+    return img
+
+    
+
 
 
 if __name__ == "__main__": 
