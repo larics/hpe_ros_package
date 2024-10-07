@@ -50,3 +50,4 @@ Code for the acore and EPFL experiments contains decoupled launch files for easi
  - [x] Incoroporate with aerial manipulator control 
  - [ ] Find Kalman filter measurement and process covariances  
  - [ ] Add message_synchronizer for PCL and detection
+ - [ ] Add ROS wrapper for `trt_pose`
