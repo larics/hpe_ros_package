@@ -9,6 +9,8 @@ from PIL import Image as PILImage
 
 from sensor_msgs.msg import Image, CompressedImage, Joy, PointCloud2
 
+
+
 def convert_pil_to_ros_img(img):
         img = img.convert('RGB')
         msg = Image()
@@ -35,6 +37,29 @@ def convert_pil_to_ros_compressed(img, color_conversion = False, compression_typ
         msg.data = compressed_img.tobytes()
 
         return msg
+
+def convert_ros_to_pil_img(msg):
+    try:
+        width = msg.width
+        height = msg.height
+        channels = 3 if msg.encoding == "rgb8" else 1  # Assuming RGB or grayscale
+        
+        # Convert the ROS image data (byte array) to a NumPy array
+        image_data = numpy.frombuffer(msg.data, dtype=numpy.uint8)
+
+        if channels == 3: 
+            np_img = image_data.reshape((height, width, channels))
+        else:
+            np_img = image_data.reshape((height, width))
+    
+        pil_img = PILImage.fromarray(np_img)
+
+        return pil_img
+
+    except Exception as e:
+        rospy.logerr("Error converting ROS image to PIL image: {}".format(e))
+        return None
+      
 
 def get_text_dimensions(text_string, font):
 
