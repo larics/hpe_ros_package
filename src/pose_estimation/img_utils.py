@@ -49,6 +49,7 @@ def convert_ros_to_pil_img(msg):
 
         if channels == 3: 
             np_img = image_data.reshape((height, width, channels))
+            np_img = bgr2rgb(np_img)
         else:
             np_img = image_data.reshape((height, width))
     
