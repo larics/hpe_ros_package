@@ -48,6 +48,9 @@ Code for the acore and EPFL experiments contains decoupled launch files for easi
  - [ ] Implement inverse kinematics 
  - [x] Find appropriate filtering method --> median, avg and lowpass implemented 
  - [x] Incoroporate with aerial manipulator control 
- - [ ] Find Kalman filter measurement and process covariances  
- - [ ] Add message_synchronizer for PCL and detection
- - [ ] Add ROS wrapper for `trt_pose`
+ - [x] Find Kalman filter measurement and process covariances  
+ - [x] Add message_synchronizer for PCL and detection
+ - [x] Add ROS wrapper for `trt_pose` 
+ - [x] Add ROS wrapper for the trt_pose for optimized model
+ - [ ] Added plotting for the ROS node
+ - [ ] Test inference for the ROS wrapper for the trt_pose of the optimized model 
