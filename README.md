@@ -50,6 +50,7 @@ Code for the acore and EPFL experiments contains decoupled launch files for easi
  - [x] Incoroporate with aerial manipulator control 
  - [x] Find Kalman filter measurement and process covariances  
  - [x] Add message_synchronizer for PCL and detection
- - [ ] Add ROS wrapper for `trt_pose`
- - [ ] Add ROS wrapper for the trt_pose for optimized model
+ - [x] Add ROS wrapper for `trt_pose` 
+ - [x] Add ROS wrapper for the trt_pose for optimized model
+ - [ ] Added plotting for the ROS node
  - [ ] Test inference for the ROS wrapper for the trt_pose of the optimized model 
