@@ -40,9 +40,10 @@ def convert_pil_to_ros_compressed(img, color_conversion = False, compression_typ
 
 def convert_ros_to_pil_img(msg):
     try:
+        rospy.loginfo_once("Converting ROS image to PIL image, encoding is {}")
         width = msg.width
         height = msg.height
-        channels = 3 if msg.encoding == "rgb8" else 1  # Assuming RGB or grayscale
+        channels = 3 if (msg.encoding == "rgb8" or msg.encoding == "bgr8") else 1  # Assuming RGB or grayscale
         
         # Convert the ROS image data (byte array) to a NumPy array
         image_data = numpy.frombuffer(msg.data, dtype=numpy.uint8)

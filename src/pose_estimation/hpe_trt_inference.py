@@ -43,6 +43,8 @@ class TrtPoseROS():
         # Configure model pths
         #MODEL = "resnet18_baseline_att_224x224_A"
         MODEL = "densenet121_baseline_att_256x256_B"
+        # Change camera type 
+        self.camera_type = "LUXONIS" # "WEBCAM" or "LUXONIS"
 
         if MODEL == "resnet18_baseline_att_224x224_A": 
             weights_pth = '/root/trt_pose/tasks/human_pose/resnet18_baseline_att_224x224_A_epoch_249.pth'
@@ -86,7 +88,6 @@ class TrtPoseROS():
         num_links = len(human_pose['skeleton'])
         
         # Load model
-
         if model_name == "resnet18_baseline_att_224x224_A": 
             model = trt_pose.models.resnet18_baseline_att(num_parts, 2 * num_links).cuda().eval()
         if model_name == "densenet121_baseline_att_256x256_B":
@@ -97,14 +98,16 @@ class TrtPoseROS():
         return model
 
     def _init_optimized_model(self, optim_model_pth): 
-
         model_trt = TRTModule()
         model_trt.load_state_dict(torch.load(optim_model_pth))
         rospy.loginfo("Optimized model weights loaded succesfuly!")
         return model_trt
 
     def _init_subscribers(self):
-        self.camera_sub = rospy.Subscriber("/usb_cam/image_raw", ROSImage, self.image_cb, queue_size=1)
+        if self.camera_type == "WEBCAM":
+            self.camera_sub = rospy.Subscriber("/usb_cam/image_raw", ROSImage, self.image_cb, queue_size=1)
+        if self.camera_type == "LUXONIS":
+            self.camera_sub = rospy.Subscriber("/oak/rgb/image_raw", ROSImage, self.image_cb, queue_size=1)
 
     def _init_publishers(self):
         self.image_pub =  rospy.Publisher("/person_img", ROSImage, queue_size=1)
@@ -113,6 +116,7 @@ class TrtPoseROS():
         pass
 
     def image_cb(self, msg):
+        rospy.loginfo_once("Recieved oak image!")
         self.pil_img = convert_ros_to_pil_img(msg)
         # Resize PIL image to necessary shape
         self.resized_pil_img = self.pil_img.resize((self.resize_w, self.resize_h))
@@ -121,13 +125,12 @@ class TrtPoseROS():
     #https://www.ros.org/news/2018/09/roscon-2017-determinism-in-ros---or-when-things-break-sometimes-and-how-to-fix-it----ingo-lutkebohle.html
     def run(self):
 
-        rospy.loginfo("Entered run method!")
         while not self.initialized: 
             rospy.loginfo("Node is not initialized yet.")
             rospy.Rate(1).sleep()
 
         if (self.img_reciv and self.initialized):
-            rospy.loginfo("Inference loop!")     
+            rospy.loginfo_throttle_identical(10, "Inference loop!")     
             # TODO: Check duration of the copy operation [maybe slows things down]
             self.inf_img = copy.deepcopy(self.resized_pil_img)
             self.nn_input = transforms.functional.to_tensor(self.inf_img).to(self.device)
