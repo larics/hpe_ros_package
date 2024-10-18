@@ -39,11 +39,24 @@ class TrtPoseROS():
         self.initialized = False
         self.img_reciv = False
         self.rate = rospy.Rate(100)
+        
+        # Configure model pths
+        #MODEL = "resnet18_baseline_att_224x224_A"
+        MODEL = "densenet121_baseline_att_256x256_B"
+
+        if MODEL == "resnet18_baseline_att_224x224_A": 
+            weights_pth = '/root/trt_pose/tasks/human_pose/resnet18_baseline_att_224x224_A_epoch_249.pth'
+            optim_pth = '/root/trt_pose/tasks/human_pose/resnet18_baseline_att_224x224_A_epoch_249_trt.pth'
+            self.resize_w, self.resize_h = 224, 224
+        if MODEL == "densenet121_baseline_att_256x256_B":
+            weights_pth = '/root/trt_pose/tasks/human_pose/densenet121_baseline_att_256x256_B_epoch_160.pth'
+            optim_pth = '/root/trt_pose/tasks/human_pose/densenet121_baseline_att_256x256_B_epoch_160_trt.pth'
+            self.resize_w, self.resize_h = 224, 224
 
         # Init model
-        self.model = self._init_model()
+        self.model = self._init_model(MODEL, weights_pth)
         # Init optimized model
-        self.model_trt = self._init_optimized_model()
+        self.model_trt = self._init_optimized_model(optim_pth)
 
         self._init_subscribers()
         self._init_publishers()
@@ -61,7 +74,7 @@ class TrtPoseROS():
 
         self.bridge = CvBridge()
 
-    def _init_model(self): 
+    def _init_model(self, model_name, model_pth): 
         # Load topology
         with open('/root/trt_pose/tasks/human_pose/human_pose.json', 'r') as f: 
             human_pose = json.load(f)
@@ -72,17 +85,21 @@ class TrtPoseROS():
         num_parts = len(human_pose['keypoints'])
         num_links = len(human_pose['skeleton'])
         
-        # Load model 
-        model = trt_pose.models.resnet18_baseline_att(num_parts, 2 * num_links).cuda().eval()
-        MODEL_WEIGHTS = '/root/trt_pose/tasks/human_pose/resnet18_baseline_att_224x224_A_epoch_249.pth'
-        model.load_state_dict(torch.load(MODEL_WEIGHTS))
+        # Load model
+
+        if model_name == "resnet18_baseline_att_224x224_A": 
+            model = trt_pose.models.resnet18_baseline_att(num_parts, 2 * num_links).cuda().eval()
+        if model_name == "densenet121_baseline_att_256x256_B":
+            model = trt_pose.models.densenet121_baseline_att(num_parts, 2 * num_links).cuda().eval()
+
+        model.load_state_dict(torch.load(model_pth))
         rospy.loginfo("Regular model weights loaded succesfuly!")
         return model
 
-    def _init_optimized_model(self): 
-        OPTIMIZED_MODEL = '/root/trt_pose/tasks/human_pose/resnet18_baseline_att_224x224_A_epoch_249_trt.pth'
+    def _init_optimized_model(self, optim_model_pth): 
+
         model_trt = TRTModule()
-        model_trt.load_state_dict(torch.load(OPTIMIZED_MODEL))
+        model_trt.load_state_dict(torch.load(optim_model_pth))
         rospy.loginfo("Optimized model weights loaded succesfuly!")
         return model_trt
 
@@ -98,7 +115,7 @@ class TrtPoseROS():
     def image_cb(self, msg):
         self.pil_img = convert_ros_to_pil_img(msg)
         # Resize PIL image to necessary shape
-        self.resized_pil_img = self.pil_img.resize((224, 224))
+        self.resized_pil_img = self.pil_img.resize((self.resize_w, self.resize_h))
         self.img_reciv = True
 
     #https://www.ros.org/news/2018/09/roscon-2017-determinism-in-ros---or-when-things-break-sometimes-and-how-to-fix-it----ingo-lutkebohle.html
