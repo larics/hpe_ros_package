@@ -41,8 +41,9 @@ class TrtPoseROS():
         self.rate = rospy.Rate(100)
         
         # Configure model pths
-        #MODEL = "resnet18_baseline_att_224x224_A"
-        MODEL = "densenet121_baseline_att_256x256_B"
+        
+        MODEL = "resnet18_baseline_att_224x224_A"
+        #MODEL = "densenet121_baseline_att_256x256_B"
         # Change camera type 
         self.camera_type = "LUXONIS" # "WEBCAM" or "LUXONIS"
 
