@@ -55,10 +55,12 @@ class HumanPose3D():
 
         if self.openpose: 
             self.body25 = True
+            self.coco_mirror = False
             self.coco = False
             self.mpii = False
         else: 
-            self.coco = True
+            self.coco = False
+            self.coco_mirror = True
             self.body25 = False
             self.mpii = False
 
@@ -75,17 +77,23 @@ class HumanPose3D():
         self.coco_indexing = {0: "nose", 1:"l_eye", 2:"r_eye", 3:"l_ear", 4:"r_ear", 5:"l_shoulder", 
                               6:"r_shoulder", 7:"l_elbow", 8:"r_elbow", 9:"l_wrist", 10:"r_wrist", 
                               11:"l_hip", 12:"r_hip", 13:"l_knee", 14:"r_knee", 15:"l_ankle", 16:"r_ankle"}
+        
+        self.coco_mirror_indexing = {0: "nose", 1: "r_eye", 2: "l_eye", 3: "r_ear", 4: "l_ear", 5: "r_shoulder",
+                                     6: "l_shoulder", 7: "r_elbow", 8: "l_elbow", 9: "r_wrist", 10: "l_wrist",
+                                    11: "r_hip", 12: "l_hip", 13: "r_knee", 14: "l_knee", 15: "r_ankle", 16: "l_ankle"}
 
         self.body25_indexing = {0 :"nose", 1 :"neck", 2:  "r_shoulder", 3:  "r_elbow", 
                                 4: "r_wrist", 5: "l_shoulder", 6 : "l_elbow", 7:"l_wrist", 8: "midhip", 9: "r_hip",
                                 10: "r_knee", 11:"r_ankle", 12:"l_hip", 13: "l_knee", 14: "l_ankle", 15: "r_eye", 16: "l_eye", 
                                 17: "r_ear", 18:"l_ear", 19:"l_big_toe", 20:"l_small_toe", 21: "l_heel", 22: "r_big_toe",
                                 23: "r_small_toe", 24: "r_heel", 25: "background"}
+
         
         # self.indexing = different indexing depending on weights that are used!
         if self.mpii: self.indexing = self.mpii_indexing
         if self.coco: self.indexing = self.coco_indexing   
-        if self.body25: self.indexing = self.body25_indexing      
+        if self.body25: self.indexing = self.body25_indexing
+        if self.coco_mirror: self.indexing = self.coco_mirror_indexing
 
         self.camera_frame_name = "camera_color_frame"
         # Initialize transform broadcaster                  
