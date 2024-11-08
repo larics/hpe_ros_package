@@ -21,7 +21,7 @@ import torch
 import rospy
 import copy
 
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Int64MultiArray
 from sensor_msgs.msg import Image as ROSImage
 
 import torchvision.transforms as transforms
@@ -112,6 +112,7 @@ class TrtPoseROS():
 
     def _init_publishers(self):
         self.image_pub =  rospy.Publisher("/person_img", ROSImage, queue_size=1)
+        self.pred_pub = rospy.Publisher("/hpe_preds", Int64MultiArray, queue_size=1)
 
     def cinfo_cb(self, msg): 
         pass
@@ -123,6 +124,14 @@ class TrtPoseROS():
         self.resized_pil_img = self.pil_img.resize((self.resize_w, self.resize_h))
         self.img_reciv = True
 
+    def publish_predictions(self, keypoints):
+        # Simple predictions publisher (publish detected pixels just as a test)
+        msg = Int64MultiArray()
+        for k in keypoints:
+            msg.data.append(k[0])
+            msg.data.append(k[1])  
+        self.pred_pub.publish(msg)
+
     #https://www.ros.org/news/2018/09/roscon-2017-determinism-in-ros---or-when-things-break-sometimes-and-how-to-fix-it----ingo-lutkebohle.html
     def run(self):
 
@@ -133,6 +142,7 @@ class TrtPoseROS():
         if (self.img_reciv and self.initialized):
             rospy.loginfo_throttle_identical(10, "Inference loop!")     
             # TODO: Check duration of the copy operation [maybe slows things down]
+            # Doesn't work without resizing
             self.inf_img = copy.deepcopy(self.resized_pil_img)
             self.nn_input = transforms.functional.to_tensor(self.inf_img).to(self.device)
             self.nn_input.sub_(self.mean[:, None, None]).div_(self.std[:, None, None])
@@ -140,9 +150,10 @@ class TrtPoseROS():
             cmap, paf = self.model_trt(self.nn_in)
             cmap, paf = cmap.detach().cpu(), paf.detach().cpu()
             counts, objects, peaks = self.parse_objects(cmap, paf)
-            print("Counts: ", counts)
 
-            self.inf_img = self.draw_objects(self.inf_img, counts, objects, peaks)
+            self.inf_img, keypoints = self.draw_objects(self.inf_img, counts, objects, peaks)
+            # Publish predictions on ROS topic
+            self.publish_predictions(keypoints)
             #img_msg = convert_pil_to_ros_img(self.inf_img)
             self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.inf_img, 'rgb8'))
 

@@ -68,6 +68,7 @@ class HumanPose3D():
         self._init_subscribers()
         self._init_publishers()
 
+        # TODO: Add TRT indexing
         # MPII keypoint indexing
         self.mpii_indexing = {0:"r_ankle", 1:"r_knee", 2:"r_hip", 3:"l_hip", 4: "l_knee", 5: "l_ankle",
                               6:"pelvis", 7:"thorax", 8:"upper_neck", 9:"head_top", 10:"r_wrist",
@@ -119,7 +120,6 @@ class HumanPose3D():
         self.left_wrist_pub     = rospy.Publisher("leftw_point", Vector3, queue_size=1)
         self.right_wrist_pub    = rospy.Publisher("rightw_point", Vector3, queue_size=1)
         self.upper_body_3d_pub  = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
-        
         rospy.loginfo("Initialized publishers!")
 
 

@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 
 import os
 import sys
@@ -15,7 +15,6 @@ from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from std_msgs.msg import Float64MultiArray
 from geometry_msgs.msg import Vector3
 from hpe_ros_msgs.msg import TorsoJointPositions
-#from ros_openpose_msgs.msg import Frame
 
 import message_filters
 
@@ -25,7 +24,6 @@ import sensor_msgs.point_cloud2 as pc2
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
 # - add painting of a z measurements  
 # - Record bag of l shoulder, r shoulder and rest of the body parts 
-# - 
 
 class HumanPose3D(): 
 
@@ -97,22 +95,12 @@ class HumanPose3D():
         rospy.loginfo("[Hpe3D] started!")
 
     def _init_subscribers(self):
-
-        self.camera_sub = rospy.Subscriber("camera/color/image_raw", Image, self.image_cb, queue_size=1)
-        self.depth_sub = rospy.Subscriber("camera/depth_registered/points", PointCloud2, self.pcl_cb, queue_size=1)
+        
+        # Luxonis camera is used for now
+        self.camera_sub         = rospy.Subscriber("camera/color/image_raw", Image, self.image_cb, queue_size=1)
+        self.depth_sub          = rospy.Subscriber("camera/depth_registered/points", PointCloud2, self.pcl_cb, queue_size=1)
         self.depth_cinfo_sub    = rospy.Subscriber("camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
-       
-        if self.openpose: 
-            #self.predictions_sub    = rospy.Subscriber("/frame", Frame, self.pred_cb, queue_size=1)
-            self.predictions_sub    = message_filters.Subscriber("/frame", Frame)
-            self.depth_sub          = message_filters.Subscriber("camera/depth_registered/points", PointCloud2)
-            # Doesn't matter! 
-            self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 10)
-            self.ats.registerCallback(self.frame_pcl_cb)
-
-
-        else: 
-            self.predictions_sub    = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
+        self.predictions_sub    = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
         
         rospy.loginfo("Initialized subscribers!")
 
@@ -157,24 +145,12 @@ class HumanPose3D():
 
     def pred_cb(self, msg): 
 
-        #keypoints = msg.data
-        persons = msg.persons
+        keypoints = msg.data
         self.predictions = []
         self.pose_predictions = []
-
-        if self.openpose:
-            for i, person in enumerate(persons): 
-                if i == 0: 
-                    for bodypart in person.bodyParts: 
-                        self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
-                        self.pose_predictions.append((bodypart.point.x, bodypart.point.y, bodypart.point.z))
-            
-            self.predictions = self.predictions[:18]
-            self.pred_recv = True
-        else: 
-            # pair elements
-            self.predictions = [(int(keypoints[i]), int(keypoints[i + 1])) for i in range(0, len(keypoints), 2)]
-            self.pred_recv = True
+        # pair elements
+        self.predictions = [(int(keypoints[i]), int(keypoints[i + 1])) for i in range(0, len(keypoints), 2)]
+        self.pred_recv = True
         # Cut predictions on upper body only 6+ --> don't cut predictions, performance speedup is not noticable
         # self.predictions = self.predictions[6:]
 
@@ -228,9 +204,6 @@ class HumanPose3D():
                 p = self.getP(p, x_rot, y_rot, z_rot, "xyz", "degrees") # TF from camera frame to the orientation human HAS!
                 kp_tf["{}".format(i)] = p
                 pos_named["{}".format(self.indexing[i])] = p
-
-
-
 
         return kp_tf, pos_named
 
@@ -333,7 +306,6 @@ class HumanPose3D():
                         rospy.logdebug("Run t: {}".format(duration)) # --> very fast!
 
                     self.rate.sleep()
-
 
                 else: 
 
