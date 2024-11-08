@@ -12,7 +12,7 @@ from PIL import Image as PILImage
 from img_utils import convert_pil_to_ros_img
 
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
-from std_msgs.msg import Float64MultiArray
+from std_msgs.msg import Int64MultiArray
 from geometry_msgs.msg import Vector3
 from hpe_ros_msgs.msg import TorsoJointPositions
 
@@ -91,17 +91,25 @@ class HumanPose3D():
         # Initialize transform broadcaster                  
         self.tf_br = tf.TransformBroadcaster()
 
+        self.resize_predictions = True
+        self.resized_predictions = []
         self.torso_pos_3d = TorsoJointPositions()
         rospy.loginfo("[Hpe3D] started!")
 
     def _init_subscribers(self):
         
-        # Luxonis camera is used for now
-        self.camera_sub         = rospy.Subscriber("camera/color/image_raw", Image, self.image_cb, queue_size=1)
-        self.depth_sub          = rospy.Subscriber("camera/depth_registered/points", PointCloud2, self.pcl_cb, queue_size=1)
-        self.depth_cinfo_sub    = rospy.Subscriber("camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
-        self.predictions_sub    = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
+        # Luxonis camera is used for now [without rs_compat values]
+        self.camera_sub         = rospy.Subscriber("/oak/rgb/image_raw", Image, self.image_cb, queue_size=1)
+        self.depth_sub          = rospy.Subscriber("/oak/points", PointCloud2, self.pcl_cb, queue_size=1)
+        self.depth_cinfo_sub    = rospy.Subscriber("/oak/stereo/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
+        self.predictions_sub    = rospy.Subscriber("/hpe_preds", Int64MultiArray, self.pred_cb, queue_size=1)
         
+        # Values with rs_compat = true
+        self.camera_sub         = rospy.Subscriber("/camera/color/image_raw", Image, self.image_cb, queue_size=1)
+        self.depth_sub          = rospy.Subscriber("/camera/depth/color/points", PointCloud2, self.pcl_cb, queue_size=1)
+        self.depth_cinfo_sub    = rospy.Subscriber("/camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
+
+
         rospy.loginfo("Initialized subscribers!")
 
     def _init_publishers(self): 
@@ -147,9 +155,16 @@ class HumanPose3D():
 
         keypoints = msg.data
         self.predictions = []
+        self.resized_predictions = []
         self.pose_predictions = []
         # pair elements
         self.predictions = [(int(keypoints[i]), int(keypoints[i + 1])) for i in range(0, len(keypoints), 2)]
+
+        if self.resize_predictions:
+            for pred in self.predictions: 
+                p_w, p_h = pred[0], pred[1]
+                self.resized_predictions.append([int(np.floor(p_w/224*self.dpth_img_width)),
+                                                 int(np.floor(p_h/224*self.dpth_img_height))]) 
         self.pred_recv = True
         # Cut predictions on upper body only 6+ --> don't cut predictions, performance speedup is not noticable
         # self.predictions = self.predictions[6:]
@@ -157,17 +172,18 @@ class HumanPose3D():
     def cinfo_cb(self, msg): 
 
         self.cinfo_recv = True
-
+        self.dpth_img_width = msg.width
+        self.dpth_img_height = msg.height
 
     def get_depths(self, pcl, indices, axis="z"):
 
         # Get current depths from depth cam --> TODO: Change read_points with cam_homography
+        # This works even with Luxonis! 
         depths = pc2.read_points(pcl, [axis], False, uvs=indices)
-
+        
         return depths
     
     def get_coordinates(self, pcl, keypoints, axis): 
-
         ret = {}
         for i in axis: 
             # Get distances for each axis with get_depths method
@@ -186,14 +202,12 @@ class HumanPose3D():
         for i, (x, y, z) in enumerate(zip(coords["x"], coords["y"], coords["z"])): 
             nan_cond =  not np.isnan(x) and not np.isnan(y) and not np.isnan(z)
             if nan_cond: 
-                
                 # OLD P 
                 #p = np.array([z[0], y[0], x[0]]) # Swapped z, y, x to hit correct dimension
                 #R = get_RotX(-np.pi/2)  # Needs to be rotated for 90 deg around X axis
                 #rotP = np.matmul(R, p)
                 #kp_tf["{}".format(i)] = (rotP[0], -rotP[1], rotP[2]) # Y is in wrong direction therefore -rotP
                 #pos_named["{}".format(self.indexing[i])] = (rotP[0], -rotP[1], rotP[2])
-
                 # NEW P CALC
                 p = np.array([x[0], y[0], z[0]]) 
 
@@ -221,7 +235,6 @@ class HumanPose3D():
                 p = np.matmul(get_RotY(angle_y_axis), p)
             elif i == "z":
                 p = np.matmul(get_RotZ(angle_z_axis), p)
-        
         return (p[0], p[1], p[2])
 
 
@@ -290,7 +303,12 @@ class HumanPose3D():
                     # Maybe save indices for easier debugging
                     start_time = rospy.Time.now().to_sec()
                     # Get X,Y,Z coordinates for predictions
-                    coords = self.get_coordinates(self.pcl, self.predictions, "xyz") # rospy.logdebug("coords: {}".format(coords))
+                    if self.resize_predictions:
+                        coords = self.get_coordinates(self.pcl, self.resized_predictions, "xyz") 
+                    else: 
+                        coords = self.get_coordinates(self.pcl, self.predictions, "xyz")
+
+                    rospy.loginfo("coords: {}".format(coords))
                     # Create coordinate frames
                     tfs, pos_named = self.create_keypoint_tfs(coords)
                     # Send transforms
@@ -308,8 +326,8 @@ class HumanPose3D():
                     self.rate.sleep()
 
                 else: 
-
                     self.debug_print()
+            
             except Exception as e: 
                 rospy.logwarn("Run failed: {}".format(e))
                 
@@ -344,38 +362,3 @@ if __name__ == "__main__":
 
     hpe3D = HumanPose3D(sys.argv[1], sys.argv[2])
     hpe3D.run()
-
-
-
-"""
-    def image_pcl_cb(self, img_msg, pcl_msg): 
-        
-        rospy.loginfo("Received image and pcl!")
-        self.img        = np.frombuffer(img_msg.data, dtype=np.uint8).reshape(img_msg.height, img_msg.width, -1)
-        self.img_recv   = True
-
-        self.pcl        = pcl_msg
-        self.pcl_recv   = True
-
-    def frame_pcl_cb(self, frame_msg, pcl_msg): 
-
-        #keypoints = msg.data
-        rospy.loginfo("Received frame and pcl!")
-        persons = frame_msg.persons
-        self.predictions = []
-        self.pose_predictions = []
-
-        if self.openpose:
-            for i, person in enumerate(persons): 
-                if i == 0: 
-                    for bodypart in person.bodyParts: 
-                        self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
-                        self.pose_predictions.append((bodypart.point.x, bodypart.point.y, bodypart.point.z))
-            
-            self.predictions = self.predictions[:18]
-            self.pred_recv = True
-
-        self.pcl        = pcl_msg
-        self.pcl_recv   = True    
-
-"""

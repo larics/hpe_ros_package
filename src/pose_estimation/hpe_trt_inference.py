@@ -45,7 +45,7 @@ class TrtPoseROS():
         MODEL = "resnet18_baseline_att_224x224_A"
         #MODEL = "densenet121_baseline_att_256x256_B"
         # Change camera type 
-        self.camera_type = "LUXONIS" # "WEBCAM" or "LUXONIS"
+        self.camera_type = "RS_COMPAT" # "WEBCAM" or "LUXONIS" or "RS_COMPAT"
 
         if MODEL == "resnet18_baseline_att_224x224_A": 
             weights_pth = '/root/trt_pose/tasks/human_pose/resnet18_baseline_att_224x224_A_epoch_249.pth'
@@ -109,6 +109,8 @@ class TrtPoseROS():
             self.camera_sub = rospy.Subscriber("/usb_cam/image_raw", ROSImage, self.image_cb, queue_size=1)
         if self.camera_type == "LUXONIS":
             self.camera_sub = rospy.Subscriber("/oak/rgb/image_raw", ROSImage, self.image_cb, queue_size=1)
+        if self.camera_type == "RS_COMPAT": 
+            self.camera_sub = rospy.Subscriber("/camera/color/image_raw", ROSImage, self.image_cb, queue_size=1)
 
     def _init_publishers(self):
         self.image_pub =  rospy.Publisher("/person_img", ROSImage, queue_size=1)
