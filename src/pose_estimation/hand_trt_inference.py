@@ -24,6 +24,7 @@ import torch
 import rospy
 import copy
 import cv2
+import numpy as np
 
 from std_msgs.msg import Bool, Int64MultiArray
 from sensor_msgs.msg import Image as ROSImage
@@ -72,7 +73,7 @@ class TrtHandPoseROS():
         self.device = torch.device('cuda')
         
         # Parse and draw objects to draw skeleton from the camera input 
-        self.parse_objects = ParseObjects(self.topology)
+        self.parse_objects = ParseObjects(self.topology, cmap_threshold=0.15, link_threshold=0.15)
         self.draw_objects = DrawPILObjects(self.topology)
 
         self.bridge = CvBridge()
@@ -80,24 +81,16 @@ class TrtHandPoseROS():
     def _init_model(self, weights_pth, optim_pth): 
         # Load topology
         with open('/root/trt_pose_hand/preprocess/hand_pose.json', 'r') as f: 
-            hand_pose = json.load(f)
+            self.hand_pose = json.load(f)
 
         # Load topology
-        self.topology = trt_pose.coco.coco_category_to_topology(hand_pose) 
+        self.topology = trt_pose.coco.coco_category_to_topology(self.hand_pose) 
 
-        num_parts = len(hand_pose['keypoints']); self.num_parts = num_parts
-        num_links = len(hand_pose['skeleton'])
+        num_parts = len(self.hand_pose['keypoints']); self.num_parts = num_parts
+        num_links = len(self.hand_pose['skeleton'])
 
         model = trt_pose.models.resnet18_baseline_att(num_parts, 2 * num_links).cuda().eval()
         model.load_state_dict(torch.load(weights_pth))
-
-        WIDTH = 224
-        HEIGHT = 224
-        data = torch.zeros((1, 3, HEIGHT, WIDTH)).cuda()
-        model_trt = torch2trt.torch2trt(model, [data], fp16_mode=True, max_workspace_size=1<<25)
-        OPTIMIZED_MODEL = '/root/trt_pose_hand/model/hand_pose_resnet18_att_244_244_trt.pth'
-        torch.save(model_trt.state_dict(), OPTIMIZED_MODEL)
-
         rospy.loginfo("Hand pose model weights loaded succesfuly!")
         return model
 
@@ -148,6 +141,9 @@ class TrtHandPoseROS():
             rospy.loginfo_throttle_identical(10, "Inference loop!")     
             # TODO: Check duration of the copy operation [maybe slows things down]
             # Doesn't work without resizing
+            # TODO: Measure duration
+            # TODO: Check why it detects only one hand
+            # TODO: Speed it up
             self.inf_img = copy.deepcopy(self.resized_pil_img)
             self.nn_input = transforms.functional.to_tensor(self.inf_img).to(self.device)
             self.nn_input.sub_(self.mean[:, None, None]).div_(self.std[:, None, None])
@@ -155,18 +151,14 @@ class TrtHandPoseROS():
             cmap, paf = self.model_trt(self.nn_in)
             cmap, paf = cmap.detach().cpu(), paf.detach().cpu()
             counts, objects, peaks = self.parse_objects(cmap, paf)
-            joints = preprocessdata.joints_inference(image, counts, objects, peaks)
-            draw_joints(self.inf_img, joints)
-            self.inf_img, keypoints = self.draw_objects(self.inf_img, counts, objects, peaks)
-            # Publish predictions on ROS topic
-            # self.publish_predictions(keypoints)
-            #img_msg = convert_pil_to_ros_img(self.inf_img)
-            self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.inf_img, 'rgb8'))
-
+            img = self.bridge.imgmsg_to_cv2(convert_pil_to_ros_img(self.inf_img))
+            joints = self.preprocessdata.joints_inference(img, counts, objects, peaks)
+            draw_joints(img, joints, self.hand_pose)
+            self.image_pub.publish(self.bridge.cv2_to_imgmsg(img, 'rgb8'))
             self.rate.sleep()    
 
 
-def draw_joints(image, joints):
+def draw_joints(image, joints, hand_pose):
     count = 0
     for i in joints:
         if i==[0,0]:
