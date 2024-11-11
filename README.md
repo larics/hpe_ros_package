@@ -4,12 +4,19 @@
 ROS package for human pose estimation with [Microsoft SimpleBaselines](https://github.com/microsoft/human-pose-estimation.pytorch) algorithm.
 
 
-### Starting procedure
+### Start camera
 
-Start camera, for 3D pose estimation start realsense in realsense docker: 
+Realsense [use realsense docker]: 
 ```
 roslaunch realsense2_camera rs_rgbd.launch 
 ```
+
+Luxonis [use depthai docker] 
+```
+roslaunch depthai_ros_driver camera.launch 
+```
+
+Note: set `rs_compat:=true` before launching for luxonis. 
 
 ### HMI starting procedure 
 
