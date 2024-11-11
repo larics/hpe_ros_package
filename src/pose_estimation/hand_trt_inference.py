@@ -145,11 +145,14 @@ class TrtHandPoseROS():
             # TODO: Check why it detects only one hand
             # TODO: Speed it up
             self.inf_img = copy.deepcopy(self.resized_pil_img)
+            self.start_time = rospy.Time.now()
             self.nn_input = transforms.functional.to_tensor(self.inf_img).to(self.device)
             self.nn_input.sub_(self.mean[:, None, None]).div_(self.std[:, None, None])
             self.nn_in = self.nn_input[None, ...] 
             cmap, paf = self.model_trt(self.nn_in)
             cmap, paf = cmap.detach().cpu(), paf.detach().cpu()
+            self.end_time = rospy.Time.now()
+            rospy.loginfo("Inference duration: {}".format(self.end_time.to_sec() - self.start_time.to_sec()))
             counts, objects, peaks = self.parse_objects(cmap, paf)
             img = self.bridge.imgmsg_to_cv2(convert_pil_to_ros_img(self.inf_img))
             joints = self.preprocessdata.joints_inference(img, counts, objects, peaks)

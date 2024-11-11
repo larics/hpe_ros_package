@@ -18,6 +18,18 @@ roslaunch depthai_ros_driver camera.launch
 
 Note: set `rs_compat:=true` before launching for luxonis. 
 
+### Launch trt human pose estimation 
+
+If you want to launch human pose estimation run: 
+```
+roslaunch hpe_ros_package hpe_trt_inference.launch 
+```
+
+If you want to launch hand pose estimation:
+```
+roslaunch hpe_ros_package hand_trt_inference.launch 
+```
+
 ### HMI starting procedure 
 
 Start HPE3d: 
