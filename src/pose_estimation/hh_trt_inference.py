@@ -18,7 +18,6 @@ import torch2trt
 from torch2trt import TRTModule
 
 sys.path.append("/root/trt_pose_hand")
-from preprocessdata import preprocessdata
 
 import torch
 import rospy
@@ -30,7 +29,7 @@ from std_msgs.msg import Bool, Int64MultiArray
 from sensor_msgs.msg import Image as ROSImage
 
 import torchvision.transforms as transforms
-from img_utils import convert_ros_to_pil_img, convert_pil_to_ros_img
+from img_utils import convert_ros_to_pil_img
 
 from cv_bridge import CvBridge
 import traitlets
@@ -40,7 +39,7 @@ class HHPoseROS():
     def __init__(self):
 
         # Init node
-        rospy.init_node("hh_trt_inference", anonymous=True) 
+        rospy.init_node("hh_trt_inference", anonymous=True, log_level=rospy.DEBUG) 
 
         self.initialized = False
         self.img_reciv = False
@@ -62,16 +61,14 @@ class HHPoseROS():
         self.hpe_model_trt = self._init_optimized_model(hpe_optim_pth)
         self.hpe_topology = self._init_hpe_topology()
 
+        # init subscribers and publishers
         self._init_subscribers()
         self._init_publishers()
-
-        # Init subscribers & pubs     
         self.initialized = True
 
         self.mean = torch.Tensor([0.485, 0.456, 0.406]).cuda()
         self.std = torch.Tensor([0.229, 0.224, 0.225]).cuda()
-        self.device = torch.device('cuda')
-        
+
         # Parse and draw objects to draw skeleton from the camera input 
         self.parse_hpe_objects = ParseObjects(self.hpe_topology)
         self.draw_hpe_objects = DrawPILObjects(self.hpe_topology)
@@ -149,16 +146,17 @@ class HHPoseROS():
             # TODO: Speed it up
             self.start_time = rospy.Time.now().to_sec()
             self.inf_img = copy.deepcopy(self.resized_pil_img)
-            self.nn_input = transforms.functional.to_tensor(self.inf_img).to(self.device)
+            self.nn_input = transforms.functional.to_tensor(self.inf_img).to(torch.device('cuda'))
             self.nn_input.sub_(self.mean[:, None, None]).div_(self.std[:, None, None])
             self.nn_in = self.nn_input[None, ...] 
             hpe_counts, hpe_objects, hpe_peaks = self.predict_hpe(self.nn_in)
             hand_counts, hand_objects, hand_peaks = self.predict_hand(self.nn_in)
+            # TODO: Modify both draw_methods to use this data to extract 3D keypoints for them to be published
             img, keypoints = self.draw_hpe_objects(self.inf_img, hpe_counts, hpe_objects, hpe_peaks)
             img, keypoints = self.draw_hand_objects(img, hand_counts, hand_objects, hand_peaks)
             self.image_pub.publish((self.bridge.cv2_to_imgmsg(img, 'rgb8')))
             self.end_time = rospy.Time.now().to_sec()
-            rospy.loginfo("Inference duration is: {}".format(self.end_time - self.start_time))
+            rospy.logdebug("Inference duration is: {}".format(self.end_time - self.start_time))
             #self.rate.sleep()    
 
 if __name__ == '__main__':
