@@ -109,11 +109,9 @@ class HHPoseROS():
             self.camera_sub = rospy.Subscriber("/camera/color/image_raw", ROSImage, self.image_cb, queue_size=1)
 
     def _init_publishers(self):
-        self.image_pub =  rospy.Publisher("/hand_img", ROSImage, queue_size=1)
+        self.image_pub =  rospy.Publisher("/hh_img", ROSImage, queue_size=1)
         self.pred_pub = rospy.Publisher("/hand_keypoint_preds", Int64MultiArray, queue_size=1)
 
-    def cinfo_cb(self, msg): 
-        pass
 
     def image_cb(self, msg):
         rospy.loginfo_once("Recieved oak image!")
@@ -146,9 +144,10 @@ class HHPoseROS():
             rospy.loginfo_throttle_identical(10, "Inference loop!")     
             # TODO: Check duration of the copy operation [maybe slows things down]
             # Doesn't work without resizing
-            # TODO: Measure duration
+            # TODO: Measure duration --> inference duration is not slow 
             # TODO: Check why it detects only one hand
             # TODO: Speed it up
+            self.start_time = rospy.Time.now().to_sec()
             self.inf_img = copy.deepcopy(self.resized_pil_img)
             self.nn_input = transforms.functional.to_tensor(self.inf_img).to(self.device)
             self.nn_input.sub_(self.mean[:, None, None]).div_(self.std[:, None, None])
@@ -156,13 +155,15 @@ class HHPoseROS():
             hpe_counts, hpe_objects, hpe_peaks = self.predict_hpe(self.nn_in)
             hand_counts, hand_objects, hand_peaks = self.predict_hand(self.nn_in)
             img, keypoints = self.draw_hpe_objects(self.inf_img, hpe_counts, hpe_objects, hpe_peaks)
-            img, keypoints = self.draw_hand_objects(self.inf_img, hand_counts, hand_objects, hand_peaks)
-            self.image_pub.publish((self.bridge.cv2_to_imgmsg(img, 'bgr8')))
-            self.rate.sleep()    
+            img, keypoints = self.draw_hand_objects(img, hand_counts, hand_objects, hand_peaks)
+            self.image_pub.publish((self.bridge.cv2_to_imgmsg(img, 'rgb8')))
+            self.end_time = rospy.Time.now().to_sec()
+            rospy.loginfo("Inference duration is: {}".format(self.end_time - self.start_time))
+            #self.rate.sleep()    
 
 if __name__ == '__main__':
 
-    trt_ros = TrtHandPoseROS()
+    trt_ros = HHPoseROS()
     try:
         while not rospy.is_shutdown(): 
             trt_ros.run()
