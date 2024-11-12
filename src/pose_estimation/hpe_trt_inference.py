@@ -152,12 +152,11 @@ class TrtPoseROS():
             cmap, paf = self.model_trt(self.nn_in)
             cmap, paf = cmap.detach().cpu(), paf.detach().cpu()
             counts, objects, peaks = self.parse_objects(cmap, paf)
-
             self.inf_img, keypoints = self.draw_objects(self.inf_img, counts, objects, peaks)
             # Publish predictions on ROS topic
             self.publish_predictions(keypoints)
             #img_msg = convert_pil_to_ros_img(self.inf_img)
-            self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.inf_img, 'rgb8'))
+            self.image_pub.publish(self.bridge.cv2_to_imgmsg(self.inf_img, 'bgr8'))
 
             self.rate.sleep()    
 
