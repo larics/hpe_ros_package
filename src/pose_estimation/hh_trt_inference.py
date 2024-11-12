@@ -18,6 +18,7 @@ import torch2trt
 from torch2trt import TRTModule
 
 sys.path.append("/root/trt_pose_hand")
+from preprocessdata import preprocessdata
 
 import torch
 import rospy
@@ -34,12 +35,12 @@ from img_utils import convert_ros_to_pil_img, convert_pil_to_ros_img
 from cv_bridge import CvBridge
 import traitlets
 
-class TrtHandPoseROS():
+class HHPoseROS():
 
     def __init__(self):
 
         # Init node
-        rospy.init_node("hand_trt_inference", anonymous=True) 
+        rospy.init_node("hh_trt_inference", anonymous=True) 
 
         self.initialized = False
         self.img_reciv = False
@@ -48,14 +49,18 @@ class TrtHandPoseROS():
         # Change camera type # "WEBCAM" or "LUXONIS" or "RS_COMPAT"
         self.camera_type = "RS_COMPAT" 
 
-        weights_pth = '/root/trt_pose_hand/model/hand_pose_resnet18_att_244_244.pth'
-        optim_pth = '/root/trt_pose_hand/model/hand_pose_resnet18_att_244_244_trt.pth'
+        # HANDS MODEL
+        hands_optim_pth = '/root/trt_pose_hand/model/hand_pose_resnet18_att_244_244_trt.pth'
+        # HPE MODEL
+        hpe_optim_pth = '/root/trt_pose/tasks/human_pose/resnet18_baseline_att_224x224_A_epoch_249_trt.pth'
         self.resize_w, self.resize_h = 224, 224
 
-        # Init model
-        self.model = self._init_model(weights_pth, weights_pth)
-        # Init optimized model
-        self.model_trt = self._init_optimized_model(optim_pth)
+        # Init hand_model
+        self.hand_model_trt = self._init_optimized_model(hands_optim_pth)
+        self.hand_topology = self._init_hand_topology()
+        # init hpe mode
+        self.hpe_model_trt = self._init_optimized_model(hpe_optim_pth)
+        self.hpe_topology = self._init_hpe_topology()
 
         self._init_subscribers()
         self._init_publishers()
@@ -68,31 +73,31 @@ class TrtHandPoseROS():
         self.device = torch.device('cuda')
         
         # Parse and draw objects to draw skeleton from the camera input 
-        self.parse_objects = ParseObjects(self.topology, cmap_threshold=0.15, link_threshold=0.15)
-        self.draw_objects = DrawPILObjects(self.topology)
+        self.parse_hpe_objects = ParseObjects(self.hpe_topology)
+        self.draw_hpe_objects = DrawPILObjects(self.hpe_topology)
+        self.parse_hand_objects = ParseObjects(self.hand_topology, cmap_threshold=0.15, link_threshold=0.15)
+        self.draw_hand_objects = DrawPILObjects(self.hand_topology)
 
         self.bridge = CvBridge()
 
-    def _init_model(self, weights_pth, optim_pth): 
+    def _init_hand_topology(self): 
         # Load topology
         with open('/root/trt_pose_hand/preprocess/hand_pose.json', 'r') as f: 
             self.hand_pose = json.load(f)
-
+        topology = trt_pose.coco.coco_category_to_topology(self.hand_pose) 
+        return topology
+    
+    def _init_hpe_topology(self):
         # Load topology
-        self.topology = trt_pose.coco.coco_category_to_topology(self.hand_pose) 
-
-        num_parts = len(self.hand_pose['keypoints']); self.num_parts = num_parts
-        num_links = len(self.hand_pose['skeleton'])
-
-        model = trt_pose.models.resnet18_baseline_att(num_parts, 2 * num_links).cuda().eval()
-        model.load_state_dict(torch.load(weights_pth))
-        rospy.loginfo("Hand pose model weights loaded succesfuly!")
-        return model
-
+        with open('/root/trt_pose/tasks/human_pose/human_pose.json', 'r') as f: 
+            self.human_pose = json.load(f)
+        topology = trt_pose.coco.coco_category_to_topology(self.human_pose) 
+        return topology
+      
     def _init_optimized_model(self, optim_model_pth): 
         model_trt = TRTModule()
         model_trt.load_state_dict(torch.load(optim_model_pth))
-        rospy.loginfo("Optimized hand pose model weights loaded succesfuly!")
+        rospy.loginfo("Optimized model weights loaded succesfuly!")
         return model_trt
 
     def _init_subscribers(self):
@@ -117,13 +122,18 @@ class TrtHandPoseROS():
         self.resized_pil_img = self.pil_img.resize((self.resize_w, self.resize_h))
         self.img_reciv = True
 
-    def publish_predictions(self, keypoints):
-        # Simple predictions publisher (publish detected pixels just as a test)
-        msg = Int64MultiArray()
-        for k in keypoints:
-            msg.data.append(k[0])
-            msg.data.append(k[1])  
-        self.pred_pub.publish(msg)
+    # TODO: Both predict methods could be reduced to one method
+    def predict_hpe(self, nn_in):
+        cmap, paf = self.hpe_model_trt(nn_in)
+        cmap, paf = cmap.detach().cpu(), paf.detach().cpu()
+        counts, objects, peaks = self.parse_hpe_objects(cmap, paf)
+        return counts, objects, peaks
+    
+    def predict_hand(self, nn_in):
+        cmap, paf = self.hand_model_trt(nn_in)
+        cmap, paf = cmap.detach().cpu(), paf.detach().cpu()
+        counts, objects, peaks = self.parse_hand_objects(cmap, paf)
+        return counts, objects, peaks
 
     #https://www.ros.org/news/2018/09/roscon-2017-determinism-in-ros---or-when-things-break-sometimes-and-how-to-fix-it----ingo-lutkebohle.html
     def run(self):
@@ -143,13 +153,11 @@ class TrtHandPoseROS():
             self.nn_input = transforms.functional.to_tensor(self.inf_img).to(self.device)
             self.nn_input.sub_(self.mean[:, None, None]).div_(self.std[:, None, None])
             self.nn_in = self.nn_input[None, ...] 
-            cmap, paf = self.model_trt(self.nn_in)
-            cmap, paf = cmap.detach().cpu(), paf.detach().cpu()
-            counts, objects, peaks = self.parse_objects(cmap, paf)
-            rospy.loginfo(f"Counts is {counts}")
-            #img = self.bridge.imgmsg_to_cv2(convert_pil_to_ros_img(self.inf_img))
-            img, keypoints = self.draw_objects(self.inf_img, counts, objects, peaks)
-            self.image_pub.publish((self.bridge.cv2_to_imgmsg(img, 'rgb8')))
+            hpe_counts, hpe_objects, hpe_peaks = self.predict_hpe(self.nn_in)
+            hand_counts, hand_objects, hand_peaks = self.predict_hand(self.nn_in)
+            img, keypoints = self.draw_hpe_objects(self.inf_img, hpe_counts, hpe_objects, hpe_peaks)
+            img, keypoints = self.draw_hand_objects(self.inf_img, hand_counts, hand_objects, hand_peaks)
+            self.image_pub.publish((self.bridge.cv2_to_imgmsg(img, 'bgr8')))
             self.rate.sleep()    
 
 if __name__ == '__main__':
