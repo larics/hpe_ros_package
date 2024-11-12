@@ -46,10 +46,8 @@ class TrtHandPoseROS():
         self.img_reciv = False
         self.rate = rospy.Rate(100)
         
-        # Configure model pths
-        
-        # Change camera type 
-        self.camera_type = "RS_COMPAT" # "WEBCAM" or "LUXONIS" or "RS_COMPAT"
+        # Change camera type # "WEBCAM" or "LUXONIS" or "RS_COMPAT"
+        self.camera_type = "RS_COMPAT" 
 
         weights_pth = '/root/trt_pose_hand/model/hand_pose_resnet18_att_244_244.pth'
         optim_pth = '/root/trt_pose_hand/model/hand_pose_resnet18_att_244_244_trt.pth'
@@ -145,36 +143,17 @@ class TrtHandPoseROS():
             # TODO: Check why it detects only one hand
             # TODO: Speed it up
             self.inf_img = copy.deepcopy(self.resized_pil_img)
-            self.start_time = rospy.Time.now()
             self.nn_input = transforms.functional.to_tensor(self.inf_img).to(self.device)
             self.nn_input.sub_(self.mean[:, None, None]).div_(self.std[:, None, None])
             self.nn_in = self.nn_input[None, ...] 
             cmap, paf = self.model_trt(self.nn_in)
             cmap, paf = cmap.detach().cpu(), paf.detach().cpu()
-            self.end_time = rospy.Time.now()
-            rospy.loginfo("Inference duration: {}".format(self.end_time.to_sec() - self.start_time.to_sec()))
             counts, objects, peaks = self.parse_objects(cmap, paf)
-            img = self.bridge.imgmsg_to_cv2(convert_pil_to_ros_img(self.inf_img))
-            joints = self.preprocessdata.joints_inference(img, counts, objects, peaks)
-            draw_joints(img, joints, self.hand_pose)
-            self.image_pub.publish(self.bridge.cv2_to_imgmsg(img, 'rgb8'))
+            rospy.loginfo(f"Counts is {counts}")
+            #img = self.bridge.imgmsg_to_cv2(convert_pil_to_ros_img(self.inf_img))
+            img, keypoints = self.draw_objects(self.inf_img, counts, objects, peaks)
+            self.image_pub.publish((self.bridge.cv2_to_imgmsg(img, 'rgb8')))
             self.rate.sleep()    
-
-
-def draw_joints(image, joints, hand_pose):
-    count = 0
-    for i in joints:
-        if i==[0,0]:
-            count+=1
-    if count>= 3:
-        return 
-    for i in joints:
-        cv2.circle(image, (i[0],i[1]), 2, (0,0,255), 1)
-    cv2.circle(image, (joints[0][0],joints[0][1]), 2, (255,0,255), 1)
-    for i in hand_pose['skeleton']:
-        if joints[i[0]-1][0]==0 or joints[i[1]-1][0] == 0:
-            break
-        cv2.line(image, (joints[i[0]-1][0],joints[i[0]-1][1]), (joints[i[1]-1][0],joints[i[1]-1][1]), (0,255,0), 1)
 
 if __name__ == '__main__':
 
