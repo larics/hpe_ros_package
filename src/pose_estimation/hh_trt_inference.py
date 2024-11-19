@@ -77,10 +77,10 @@ class HHPoseROS():
         self.draw_hand_objects = DrawPILObjects(self.hand_topology)
 
         # TODO: Find a way to use this mapping to create message (unify different mappings) --> IMPLEMENTATION THING!
-        self.hpe_mapping = {0: "nose", 1: "neck", 2: "l_eye", 3: "r_ear",
-                            4: "l_ear", 5: "", 6: "r_shoulder", 7: "l_elbow",
-                            8: "r_elbow", 9: "l_wrist", 10: "r_wrist", 11: "l_hip",
-                            12: "r_hip", 13: "l_knee", 14: "r_knee", 15: "l_ankle", 16: "r_ankle"}
+        self.coco_indexing = {0: "nose", 1: "l_eye", 2: "r_eye", 3: "l_ear", 4: "r_ear",
+                              5: "l_shoulder", 6: "r_shoulder", 7: "l_elbow", 8: "r_elbow",
+                              9: "l_wrist", 10: "r_wrist", 11: "l_hip", 12: "r_hip",
+                              13: "l_knee", 14: "r_knee", 15: "l_ankle", 16: "r_ankle", 17: "background"}
 
         self.bridge = CvBridge()
 
@@ -114,7 +114,7 @@ class HHPoseROS():
 
     def _init_publishers(self):
         self.image_pub =  rospy.Publisher("/hh_img", ROSImage, queue_size=1)
-        self.pred_pub = rospy.Publisher("/hand_keypoint_preds", Int64MultiArray, queue_size=1)
+        self.pred_pub = rospy.Publisher("/preds", Int64MultiArray, queue_size=1)
         self.hpe2d_pub = rospy.Publisher("/hpe_2d", HumanPose2D, queue_size=1)
 
     def image_cb(self, msg):
@@ -145,10 +145,19 @@ class HHPoseROS():
         msg.l_knee.x = keypoints[13][0]; msg.l_knee.y = keypoints[13][1]
         msg.r_knee.x = keypoints[14][0]; msg.r_knee.y = keypoints[14][1]
         msg.l_ankle.x = keypoints[15][0]; msg.l_ankle.y = keypoints[15][1]
+        msg.r_ankle.x = keypoints[16][0]; msg.r_ankle.y = keypoints[16][1]
         return msg
 
     def pub_hpe_pred(self, msg): 
         self.hpe_2d_pub.publish(msg)
+
+    def publish_predictions(self, keypoints):
+        # Simple predictions publisher (publish detected pixels just as a test)
+        msg = Int64MultiArray()
+        for k in keypoints:
+            msg.data.append(k[0])
+            msg.data.append(k[1])  
+        self.pred_pub.publish(msg)
 
     # TODO: Both predict methods could be reduced to one method
     def predict_hpe(self, nn_in):
@@ -184,15 +193,20 @@ class HHPoseROS():
             self.nn_in = self.nn_input[None, ...] 
             # Predictions of the HPE and the hand predictions
             hpe_counts, hpe_objects, hpe_peaks = self.predict_hpe(self.nn_in)
-            hand_counts, hand_objects, hand_peaks = self.predict_hands(self.nn_in)
+            # TODO: Commented out predict_hands to focus on the HPE only
+            # hand_counts, hand_objects, hand_peaks = self.predict_hands(self.nn_in)
 
             # TODO: Modify both draw_methods to use this data to extract 3D keypoints for them to be published
             # TODO: How to specify ROS message to use this data and how to convert this data to 3D keypoints? 
             img, hpe_keypoints = self.draw_hpe_objects(self.inf_img, hpe_counts, hpe_objects, hpe_peaks)
-            img, hand_keypoints = self.draw_hand_objects(img, hand_counts, hand_objects, hand_peaks)
+            # TODO: Commented out draw_hand_objects to focus on the HPE only
+            #img, hand_keypoints = self.draw_hand_objects(img, hand_counts, hand_objects, hand_peaks) 
+            
             # Publish predictions on ROS topic
             hpe_msg = self.create_hpe_msg(hpe_keypoints["0"]) # --> just most important detection ATM 
+            # Publish just list for the 3d position estimation
             self.hpe2d_pub.publish(hpe_msg)
+            self.publish_predictions(hpe_keypoints["0"])
             # Keypoints are: 1st detection, 2nd detection, 3rd detection, ...
             self.image_pub.publish((self.bridge.cv2_to_imgmsg(img, 'rgb8')))
             self.end_time = rospy.Time.now().to_sec()
