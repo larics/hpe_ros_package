@@ -77,8 +77,8 @@ class HHPoseROS():
         self.draw_hand_objects = DrawPILObjects(self.hand_topology)
 
         # TODO: Find a way to use this mapping to create message (unify different mappings) --> IMPLEMENTATION THING!
-        self.hpe_mapping = {0: "nose", 1: "l_eye", 2: "r_eye", 3: "l_ear",
-                            4: "r_ear", 5: "l_shoulder", 6: "r_shoulder", 7: "l_elbow",
+        self.hpe_mapping = {0: "nose", 1: "neck", 2: "l_eye", 3: "r_ear",
+                            4: "l_ear", 5: "", 6: "r_shoulder", 7: "l_elbow",
                             8: "r_elbow", 9: "l_wrist", 10: "r_wrist", 11: "l_hip",
                             12: "r_hip", 13: "l_knee", 14: "r_knee", 15: "l_ankle", 16: "r_ankle"}
 
@@ -191,7 +191,7 @@ class HHPoseROS():
             img, hpe_keypoints = self.draw_hpe_objects(self.inf_img, hpe_counts, hpe_objects, hpe_peaks)
             img, hand_keypoints = self.draw_hand_objects(img, hand_counts, hand_objects, hand_peaks)
             # Publish predictions on ROS topic
-            hpe_msg = self.create_hpe_msg(hpe_keypoints["0"])
+            hpe_msg = self.create_hpe_msg(hpe_keypoints["0"]) # --> just most important detection ATM 
             self.hpe2d_pub.publish(hpe_msg)
             # Keypoints are: 1st detection, 2nd detection, 3rd detection, ...
             self.image_pub.publish((self.bridge.cv2_to_imgmsg(img, 'rgb8')))

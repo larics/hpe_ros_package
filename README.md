@@ -39,7 +39,11 @@ roslaunch hpe_ros_package hh_trt_inference.launch
 
 ## TODO: 
 
-- [ ] Publish predictions in the image space
+- [x] Publish HPE predictions in the image space
+- [ ] Fix indexing of the HPE predictions in the image space
 - [ ] Lift predictions to the 3D space using camera depth
-- [ ] Filter measurements by kalman or smthng
+- [ ] Filter measurements with Kalman and check which indexing is used
+- [ ] Publish Hand predictions in the image space
+- [ ] Fix indexing of the hand predictions in the image space
+- [ ] Lift predictions to the 3D space using camera depth
 
