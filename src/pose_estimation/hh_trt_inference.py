@@ -27,13 +27,15 @@ import numpy as np
 
 from std_msgs.msg import Bool, Int64MultiArray
 from sensor_msgs.msg import Image as ROSImage
-from hpe_ros_msgs.msg import HumanPose2D
+from hpe_ros_msgs.msg import HumanPose2D, HandPose2D
 
 import torchvision.transforms as transforms
 from img_utils import convert_ros_to_pil_img
 
 from cv_bridge import CvBridge
 import traitlets
+
+from utils import packHumanPose2DMsg, packHandPose2DMsg
 
 class HHPoseROS():
 
@@ -105,6 +107,7 @@ class HHPoseROS():
         return model_trt
 
     def _init_subscribers(self):
+        # TODO: Move this mapping to some kind of the utils file
         if self.camera_type == "WEBCAM":
             self.camera_sub = rospy.Subscriber("/usb_cam/image_raw", ROSImage, self.image_cb, queue_size=1)
         if self.camera_type == "LUXONIS":
@@ -114,50 +117,23 @@ class HHPoseROS():
 
     def _init_publishers(self):
         self.image_pub =  rospy.Publisher("/hh_img", ROSImage, queue_size=1)
-        self.pred_pub = rospy.Publisher("/preds", Int64MultiArray, queue_size=1)
+        # Publish 2D keypoints
         self.hpe2d_pub = rospy.Publisher("/hpe_2d", HumanPose2D, queue_size=1)
+        self.hand2d_pub = rospy.Publisher("/hand_2d", HandPose2D, queue_size=1)
 
     def image_cb(self, msg):
         rospy.loginfo_once("Recieved oak image!")
         self.pil_img = convert_ros_to_pil_img(msg)
         # Resize PIL image to necessary shape
         self.resized_pil_img = self.pil_img.resize((self.resize_w, self.resize_h))
-        self.img_reciv = True
-
-    def create_hpe_msg(self, keypoints):
-        # Create ROS msg based on the keypoints
-        msg = HumanPose2D()
-        msg.header.stamp = rospy.Time.now()
-        # TODO: How to make this shorter, based on mapping? 
-        msg.nose.x = keypoints[0][0]; msg.nose.y = keypoints[0][1]
-        msg.l_eye.x = keypoints[1][0]; msg.l_eye.y = keypoints[1][1]
-        msg.r_eye.x = keypoints[2][0]; msg.r_eye.y = keypoints[2][1]
-        msg.l_ear.x = keypoints[3][0]; msg.l_ear.y = keypoints[3][1]
-        msg.r_ear.x = keypoints[4][0]; msg.r_ear.y = keypoints[4][1]
-        msg.l_shoulder.x = keypoints[5][0]; msg.l_shoulder.y = keypoints[5][1]
-        msg.r_shoulder.x = keypoints[6][0]; msg.r_shoulder.y = keypoints[6][1]
-        msg.l_elbow.x = keypoints[7][0]; msg.l_elbow.y = keypoints[7][1]
-        msg.r_elbow.x = keypoints[8][0]; msg.r_elbow.y = keypoints[8][1]
-        msg.l_wrist.x = keypoints[9][0]; msg.l_wrist.y = keypoints[9][1]
-        msg.r_wrist.x = keypoints[10][0]; msg.r_wrist.y = keypoints[10][1]
-        msg.l_hip.x = keypoints[11][0]; msg.l_hip.y = keypoints[11][1]
-        msg.r_hip.x = keypoints[12][0]; msg.r_hip.y = keypoints[12][1]
-        msg.l_knee.x = keypoints[13][0]; msg.l_knee.y = keypoints[13][1]
-        msg.r_knee.x = keypoints[14][0]; msg.r_knee.y = keypoints[14][1]
-        msg.l_ankle.x = keypoints[15][0]; msg.l_ankle.y = keypoints[15][1]
-        msg.r_ankle.x = keypoints[16][0]; msg.r_ankle.y = keypoints[16][1]
-        return msg
-
-    def pub_hpe_pred(self, msg): 
-        self.hpe_2d_pub.publish(msg)
-
-    def publish_predictions(self, keypoints):
-        # Simple predictions publisher (publish detected pixels just as a test)
-        msg = Int64MultiArray()
-        for k in keypoints:
-            msg.data.append(k[0])
-            msg.data.append(k[1])  
-        self.pred_pub.publish(msg)
+        self.img_reciv = True  
+    
+    def prepare_nn_input(self, resized_pil_img, mean, std, device='cuda'):
+        inf_img = copy.deepcopy(resized_pil_img)
+        nn_input = transforms.functional.to_tensor(inf_img).to(torch.device(device))
+        nn_input = nn_input.sub_(mean[:, None, None]).div_(std[:, None, None])
+        nn_in = nn_input[None, ...]
+        return nn_in, inf_img
 
     # TODO: Both predict methods could be reduced to one method
     def predict_hpe(self, nn_in):
@@ -180,39 +156,33 @@ class HHPoseROS():
             rospy.Rate(1).sleep()
 
         if (self.img_reciv and self.initialized):
-            rospy.loginfo_throttle_identical(10, "Inference loop!")     
+            rospy.loginfo_throttle_identical(60, "Inference loop!")     
             # TODO: Check duration of the copy operation [maybe slows things down]
             # Doesn't work without resizing
-            # TODO: Measure duration --> inference duration is not slow 
-            # TODO: Check why it detects only one hand
-            # TODO: Speed it up
             self.start_time = rospy.Time.now().to_sec()
-            self.inf_img = copy.deepcopy(self.resized_pil_img)
-            self.nn_input = transforms.functional.to_tensor(self.inf_img).to(torch.device('cuda'))
-            self.nn_input.sub_(self.mean[:, None, None]).div_(self.std[:, None, None])
-            self.nn_in = self.nn_input[None, ...] 
-            # Predictions of the HPE and the hand predictions
-            hpe_counts, hpe_objects, hpe_peaks = self.predict_hpe(self.nn_in)
-            # TODO: Commented out predict_hands to focus on the HPE only
-            # hand_counts, hand_objects, hand_peaks = self.predict_hands(self.nn_in)
+            # Prepare nn input for the HPE and the hand predictions 
+            nn_in, inf_img = self.prepare_nn_input(self.resized_pil_img, self.mean, self.std)
 
-            # TODO: Modify both draw_methods to use this data to extract 3D keypoints for them to be published
-            # TODO: How to specify ROS message to use this data and how to convert this data to 3D keypoints? 
-            img, hpe_keypoints = self.draw_hpe_objects(self.inf_img, hpe_counts, hpe_objects, hpe_peaks)
-            # TODO: Commented out draw_hand_objects to focus on the HPE only
-            #img, hand_keypoints = self.draw_hand_objects(img, hand_counts, hand_objects, hand_peaks) 
+            # Predictions of the HPE and the hand predictions
+            hpe_counts, hpe_objects, hpe_peaks = self.predict_hpe(nn_in)
+            hand_counts, hand_objects, hand_peaks = self.predict_hands(nn_in)
+
+            # Draw methods
+            img, hpe_keypoints = self.draw_hpe_objects(inf_img, hpe_counts, hpe_objects, hpe_peaks)
+            img, hand_keypoints = self.draw_hand_objects(img, hand_counts, hand_objects, hand_peaks) 
             
-            # Publish predictions on ROS topic
-            hpe_msg = self.create_hpe_msg(hpe_keypoints["0"]) # --> just most important detection ATM 
-            # Publish just list for the 3d position estimation
-            self.hpe2d_pub.publish(hpe_msg)
-            self.publish_predictions(hpe_keypoints["0"])
+            # Publish predictions on ROS topic ["0" is the first, most important (largest) detection]
+            if len(hpe_keypoints.keys()) > 0:
+                hpe_msg = packHumanPose2DMsg(rospy.Time.now(), hpe_keypoints["0"])
+                self.hpe2d_pub.publish(hpe_msg)
+            if len(hand_keypoints.keys()) > 0: 
+                hand_msg = packHandPose2DMsg(rospy.Time.now(), hand_keypoints["0"])
+                self.hand2d_pub.publish(hand_msg)
+
             # Keypoints are: 1st detection, 2nd detection, 3rd detection, ...
             self.image_pub.publish((self.bridge.cv2_to_imgmsg(img, 'rgb8')))
             self.end_time = rospy.Time.now().to_sec()
-            #rospy.logdebug("Inference duration is: {}".format(self.end_time - self.start_time))
-            # Inference duration is 0.05 --> 20 Hz is inference of the HPE + hands
-            #self.rate.sleep()    
+            rospy.logdebug("Inference time: {}".format(self.end_time - self.start_time))
 
 if __name__ == '__main__':
 
