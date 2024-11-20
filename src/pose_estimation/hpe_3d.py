@@ -105,6 +105,7 @@ class HumanPose3D():
         if self.openpose: 
             #self.predictions_sub    = rospy.Subscriber("/frame", Frame, self.pred_cb, queue_size=1)
             self.predictions_sub    = message_filters.Subscriber("/frame", Frame)
+            self.predictions_sub    = message_filters.Subscriber("/hpe_2d", Frame)
             self.depth_sub          = message_filters.Subscriber("camera/depth_registered/points", PointCloud2)
             # Doesn't matter! 
             self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 10)

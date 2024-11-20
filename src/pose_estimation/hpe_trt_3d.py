@@ -74,6 +74,7 @@ class HumanPose3D():
                              10: "middle1", 11: "middle2", 12: "middle3", 13: "ring0", 14: "ring1",
                              15: "ring2", 16: "ring3", 17: "pinky0", 18: "pinky1", 19: "pinky2", 20: "pinky3"}
 
+        # TODO: Check hand working 
         self.HPE = True; self.HAND = False
         self.camera_frame_name = "camera_color_frame"
         # Initialize transform broadcaster 
