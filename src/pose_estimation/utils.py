@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 from hpe_ros_msgs.msg import HumanPose2D, HandPose2D
+import numpy as np
 
 def limitCmd(cmd, upperLimit, lowerLimit):
     if cmd > upperLimit: 

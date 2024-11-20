@@ -116,6 +116,7 @@ class HumanPose3D():
         hpe_pxs = unpackHumanPose2DMsg(msg)
         # r_prefix is resized!
         self.r_hpe_preds = self.resize_preds_on_original_size(hpe_pxs, (self.dpth_img_width, self.dpth_img_height))
+        self.pred_recv = True
 
     def hand2d_cb(self, msg):
         hand_pxs = unpackHandPose2DMsg(msg)
@@ -187,7 +188,7 @@ class HumanPose3D():
         return (p[0], p[1], p[2])
 
 
-    def send_transforms(self, tfs):
+    def send_transforms(self, tfs, indexing):
 
         for index, tf in tfs.items():
             
@@ -195,7 +196,7 @@ class HumanPose3D():
             self.tf_br.sendTransform((x, y, z),
                                      (0, 0, 0, 1), # Hardcoded orientation for now
                                      rospy.Time.now(), 
-                                     self.indexing[int(index)], 
+                                     indexing[int(index)], 
                                      self.camera_frame_name)    # Should be camera but there's no transform from world to camera for now
             # Each of this tf-s is basically distance from camera_frame_name to some other coordinate frame :) 
             # use lookupTransform to fetch transform and estimate angles... 
@@ -269,7 +270,7 @@ class HumanPose3D():
                         # Create coordinate frames
                         hpe_tfs, hpe_pos_named = self.create_keypoint_tfs(hpe_coords, self.hpe_indexing)
                         # Send transforms
-                        self.send_transforms(hpe_tfs)
+                        self.send_transforms(hpe_tfs, self.hpe_indexing)
                         # Publish created ROS msg 
                         msg = self.create_ROSmsg(hpe_pos_named)
                         if msg: 
@@ -277,11 +278,11 @@ class HumanPose3D():
                     
                     if self.HAND: 
                         if self.resize_predictions:
-                            hand_coords = self.get_coordinates(self.pcl, self.resized_predictions, "xyz")
+                            hand_coords = self.get_coordinates(self.pcl, self.r_hand_preds, "xyz")
                         else: 
                             hand_coords = self.get_coordinates(self.pcl, self.predictions, "xyz")
                         hand_tfs, hand_pos_named = self.create_keypoint_tfs(hand_coords, self.hand_indexing)
-                        self.send_transforms(hand_tfs)
+                        self.send_transforms(hand_tfs, self.hand_indexing)
                         # Publish created ROS msg 
                         msg = self.create_ROSmsg(hand_pos_named)
                         if msg: 
