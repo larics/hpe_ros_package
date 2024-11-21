@@ -21,7 +21,7 @@ import message_filters
 import sensor_msgs.point_cloud2 as pc2
 
 from utils import unpackHandPose2DMsg, unpackHumanPose2DMsg, \
-    get_RotX, get_RotY, get_RotZ
+    get_RotX, get_RotY, get_RotZ, resize_preds_on_original_size
 
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
@@ -116,12 +116,12 @@ class HumanPose3D():
     def hpe2d_cb(self, msg): 
         hpe_pxs = unpackHumanPose2DMsg(msg)
         # r_prefix is resized!
-        self.r_hpe_preds = self.resize_preds_on_original_size(hpe_pxs, (self.dpth_img_width, self.dpth_img_height))
+        self.r_hpe_preds = resize_preds_on_original_size(hpe_pxs, (self.dpth_img_width, self.dpth_img_height))
         self.pred_recv = True
 
     def hand2d_cb(self, msg):
         hand_pxs = unpackHandPose2DMsg(msg)
-        self.r_hand_preds = self.resize_preds_on_original_size(hand_pxs, (self.dpth_img_width, self.dpth_img_height))
+        self.r_hand_preds = resize_preds_on_original_size(hand_pxs, (self.dpth_img_width, self.dpth_img_height))
 
     def cinfo_cb(self, msg): 
         self.cinfo_recv = True
@@ -188,28 +188,19 @@ class HumanPose3D():
                 p = np.matmul(get_RotZ(angle_z_axis), p)
         return (p[0], p[1], p[2])
 
-
     def send_transforms(self, tfs, indexing):
-
         for index, tf in tfs.items():
-            
+            # At this point we just publish points not TFs (really, it is just a form of visualization)
             x,y,z = tf[0], tf[1], tf[2]
             self.tf_br.sendTransform((x, y, z),
-                                     (0, 0, 0, 1), # Hardcoded orientation for now
+                                     (0, 0, 0, 1), # Hardcoded orientation for now 
                                      rospy.Time.now(), 
                                      indexing[int(index)], 
-                                     self.camera_frame_name)    # Should be camera but there's no transform from world to camera for now
+                                     self.camera_frame_name)    
+            # Should be camera but there's no transform from world to camera for now
             # Each of this tf-s is basically distance from camera_frame_name to some other coordinate frame :) 
             # use lookupTransform to fetch transform and estimate angles... 
 
-    # Losing precision here [How to quantify lost precision here?]
-    def resize_preds_on_original_size(self, preds, img_size):
-        resized_preds = []
-        for pred in preds: 
-            p_w, p_h = pred[0], pred[1]
-            resized_preds.append([int(np.floor(p_w/224*img_size[0])),
-                                int(np.floor(p_h/224*img_size[1]))])
-        return resized_preds
 
     def debug_print(self): 
 
@@ -301,9 +292,6 @@ class HumanPose3D():
             
             except Exception as e: 
                 rospy.logwarn("Run failed: {}".format(e))
-                
-
-
 
 
 if __name__ == "__main__": 
