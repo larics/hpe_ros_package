@@ -3,7 +3,9 @@
 
 ROS package for human pose estimation with [Microsoft SimpleBaselines](https://github.com/microsoft/human-pose-estimation.pytorch) algorithm.
 
-
+### System visualization 
+![system](./include/system.png)
+ž
 ### Start camera
 
 Realsense [use realsense docker]: 

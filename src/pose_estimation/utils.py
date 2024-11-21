@@ -137,3 +137,12 @@ def unpackHandPose2DMsg(msg):
     hand_keypoints.append((msg.pinky2.x, msg.pinky2.y))
     hand_keypoints.append((msg.pinky3.x, msg.pinky3.y))
     return hand_keypoints
+
+# Losing precision here [How to quantify lost precision here?]
+def resize_preds_on_original_size(preds, img_size):
+    resized_preds = []
+    for pred in preds: 
+        p_w, p_h = pred[0], pred[1]
+        resized_preds.append([int(np.floor(p_w/224*img_size[0])),
+                            int(np.floor(p_h/224*img_size[1]))])
+    return resized_preds
