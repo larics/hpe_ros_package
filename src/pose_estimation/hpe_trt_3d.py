@@ -254,11 +254,13 @@ class HumanPose3D():
                     # Maybe save indices for easier debugging
                     start_time = rospy.Time.now().to_sec()
                     # Get X,Y,Z coordinates for predictions
+                    # TODO: Move this to one method because basically they're the same thing, it just depends on which HPE we use
                     if self.HPE: 
                         if self.resize_predictions:
                             hpe_coords = self.get_coordinates(self.pcl, self.r_hpe_preds, "xyz") 
                         else: 
                             hpe_coords = self.get_coordinates(self.pcl, self.predictions, "xyz")
+                            rospy.logdebug(hpe_coords)
                         # Create coordinate frames
                         hpe_tfs, hpe_pos_named = self.create_keypoint_tfs(hpe_coords, self.hpe_indexing)
                         # Send transforms
@@ -275,10 +277,6 @@ class HumanPose3D():
                             hand_coords = self.get_coordinates(self.pcl, self.predictions, "xyz")
                         hand_tfs, hand_pos_named = self.create_keypoint_tfs(hand_coords, self.hand_indexing)
                         self.send_transforms(hand_tfs, self.hand_indexing)
-                        # Publish created ROS msg 
-                        msg = self.create_ROSmsg(hand_pos_named)
-                        if msg: 
-                            self.upper_body_3d_pub.publish(msg)
 
                     measure_runtime = False; 
                     if measure_runtime:

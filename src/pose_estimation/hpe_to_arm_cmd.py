@@ -14,13 +14,10 @@ from std_msgs.msg import Float64, Float32
 from geometry_msgs.msg import Vector3
 from hpe_ros_msgs.msg import TorsoJointPositions, JointArmCmd, CartesianArmCmd, EstLinkLengths
 
-
-
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
 # - Read camera_info 
 # - add painting of a z measurements  
-
 
 class hpe2armcmd():
 
@@ -182,7 +179,6 @@ class hpe2armcmd():
         except Exception as e: 
             rospy.logwarn("[{}ArmMsg] Exception encountered: {}".format(arm, str(e)))
 
-
     def publish_robot_arm(self, spitch, sroll, syaw, elbow): 
 
         spitchMsg = Float64()
@@ -193,7 +189,6 @@ class hpe2armcmd():
         syawMsg.data = np.radians(syaw)
         elbowMsg = Float64()
         elbowMsg.data = np.radians(elbow)
-
 
     def send_transform(self, p_vect, parent_frame, child_frame):
 
@@ -207,7 +202,6 @@ class hpe2armcmd():
                                   child_frame, 
                                   parent_frame)
 
-
     def send_arm_transforms(self): 
 
         try:
@@ -219,7 +213,6 @@ class hpe2armcmd():
             self.send_transform(self.p_elbow_rwrist, "right_elbow", "right_wrist")
         except Exception as e: 
             rospy.logwarn("Sending arm transforms failed: {}".format(str(e)))
-
 
     def get_arm_angles(self, p_shoulder_elbow, p_elbow_wrist, arm): 
         # No delay filtering 
@@ -240,7 +233,6 @@ class hpe2armcmd():
             yaw *= -1
 
         return pitch, roll, yaw, elbow    
-
 
     def get_RPY(self, p_shoulder_elbow):
 
@@ -436,11 +428,9 @@ class hpe2armcmd():
 
         return ang
 
-
     def createPvect(self, msg): 
         # Create position vector from Vector3
         return np.array([msg.x, msg.y, msg.z])
-
 
     def getOrthogonalProjection(self, x, plane): 
 
@@ -458,7 +448,6 @@ class hpe2armcmd():
 
         return proj_x
 
-
     def getOrthogonalVect(self, vect, plane="xy"): 
 
         if plane=="xy": 
@@ -472,12 +461,10 @@ class hpe2armcmd():
         
         return vect_
 
-
     def debug_print(self): 
 
         if not self.hpe3d_recv:
             rospy.logwarn_throttle(1, "Human pose estimation from camera stream has not been recieved.")
-
 
     def run(self): 
         
