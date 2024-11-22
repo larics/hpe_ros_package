@@ -21,8 +21,7 @@ import message_filters
 import sensor_msgs.point_cloud2 as pc2
 
 from utils import unpackHandPose2DMsg, unpackHumanPose2DMsg, \
-    get_RotX, get_RotY, get_RotZ, resize_preds_on_original_size, dict_to_matrix
-# TODO: Move dict_to_matrix
+    get_RotX, get_RotY, get_RotZ, resize_preds_on_original_size, dict_to_matrix, get_key_by_value
 
 from input_remapping import createOmatrix, createUmatrix
 
@@ -226,24 +225,25 @@ class HumanPose3D():
         self.send_transforms(hpe_tfs, indexing)
         return coords
     
-    def remapping(self, P3D, H3D):
+    def remapping(self, pts, indexing, ap_names, mp_names):
         """
             Remap the input to the desired output
             Input: 
                 P3D: 3D points of the detected person
                 H3D: 3D points of the detected hand
+                ap_names: Names of the anchor points
+                mp_names: Names of the mapping points
             Output: 
                 U: Remapped input
         """
-        ap_names = ["r_shoulder", "l_elbow"]
-        mp_names = ["r_wrist", "l_wrist"]
-        # Get this from values
-        ap = [6, 7]
-        mp = [9, 10]
-        # TODO: Map into number depending on input values :) 
-        O_ = createOmatrix(17, 2, ap, mp)
-        rospy.loginfo(O_)
-        U = createUmatrix(P3D.squeeze(), O_)
+        
+        ap = [get_key_by_value(indexing, ap_name) for ap_name in ap_names]
+        mp = [get_key_by_value(indexing, mp_name) for mp_name in mp_names]
+        # Currently number of anchor points defines number of inputs
+        n_u = len(ap); n_k = pts.size()[0] 
+        # If we use anchor points len(ap) == len(mp)
+        O_ = createOmatrix(n_k, n_u, ap, mp)
+        U = createUmatrix(pts.squeeze(), O_)
         return U
 
     def run(self): 
@@ -259,7 +259,7 @@ class HumanPose3D():
                         pts = self.get_and_pub_keypoints(self.r_hpe_preds, self.hpe_indexing)
                         # These are measurements that could be given to the Kalman for example
                         P3D = dict_to_matrix(pts)
-                        u = self.remapping(P3D, None)
+                        u = self.remapping(P3D, self.hpe_indexing, ["l_shoulder", "r_shoulder"], ["l_wrist", "r_wrist"])
                         rospy.loginfo("U is: {}".format(u))                        
                         # TODO: Output to file or some kind of database for testing/debugging 
                         # rospy.loginfo("P3D: {}".format(P3D))

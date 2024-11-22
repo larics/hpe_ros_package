@@ -139,33 +139,6 @@ def unpackHandPose2DMsg(msg):
     hand_keypoints.append((msg.pinky3.x, msg.pinky3.y))
     return hand_keypoints
 
-def create_ROSmsg(pos_named): 
-
-    msg = TorsoJointPositions()
-    msg.header          = self.pcl.header
-    msg.frame_id.data        = "camera_color_frame"
-    try:
-        # COCO doesn't have THORAX!
-        if self.coco or self.body25: 
-            thorax = Vector3((pos_named["l_shoulder"][0] + pos_named["r_shoulder"][0])/2, 
-                                (pos_named["l_shoulder"][1] + pos_named["r_shoulder"][1])/2, 
-                                (pos_named["l_shoulder"][2] + pos_named["r_shoulder"][2])/2)
-            msg.thorax = thorax
-        else: 
-            msg.thorax      = Vector3(pos_named["thorax"][0], pos_named["thorax"][1], pos_named["thorax"][2])
-        msg.left_elbow      = Vector3(pos_named["l_elbow"][0], pos_named["l_elbow"][1], pos_named["l_elbow"][2])
-        msg.right_elbow     = Vector3(pos_named["r_elbow"][0], pos_named["r_elbow"][1], pos_named["r_elbow"][2])
-        msg.left_shoulder   = Vector3(pos_named["l_shoulder"][0], pos_named["l_shoulder"][1], pos_named["l_shoulder"][2])
-        msg.right_shoulder  = Vector3(pos_named["r_shoulder"][0], pos_named["r_shoulder"][1], pos_named["r_shoulder"][2])
-        msg.left_wrist      = Vector3(pos_named["l_wrist"][0], pos_named["l_wrist"][1], pos_named["l_wrist"][2])
-        msg.right_wrist     = Vector3(pos_named["r_wrist"][0], pos_named["r_wrist"][1], pos_named["r_wrist"][2])
-        msg.success.data = True
-        rospy.logdebug("Created ROS msg!")
-    except Exception as e:
-        msg.success.data = False 
-        rospy.logwarn_throttle(2, "Create ROS msg failed: {}".format(e))
-    return msg
-
 def dict_to_matrix(data_dict):
     """
     Converts a dictionary with keys x, y, z, and their corresponding lists
@@ -180,6 +153,22 @@ def dict_to_matrix(data_dict):
                        z values in the third row.
     """
     return np.array([data_dict['x'], data_dict['y'], data_dict['z']])
+
+def get_key_by_value(d, value):
+    """
+    Finds and returns the key corresponding to a given value in a dictionary.
+
+    Parameters:
+        d (dict): The dictionary to search.
+        value: The value to find the corresponding key for.
+
+    Returns:
+        The key associated with the value if found, or None if the value is not in the dictionary.
+    """
+    for key, val in d.items():
+        if val == value:
+            return key
+    return None
 
 def get_allocation_matrix(n, m): 
     """
