@@ -22,6 +22,9 @@ import sensor_msgs.point_cloud2 as pc2
 
 from utils import unpackHandPose2DMsg, unpackHumanPose2DMsg, \
     get_RotX, get_RotY, get_RotZ, resize_preds_on_original_size, dict_to_matrix
+# TODO: Move dict_to_matrix
+
+from input_remapping import createOmatrix, createUmatrix
 
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
@@ -120,7 +123,6 @@ class HumanPose3D():
         self.pcl        = msg
         self.pcl_recv   = True
 
-    # TODO: Move to utils
     def hpe2d_cb(self, msg): 
         hpe_pxs = unpackHumanPose2DMsg(msg)
         # r_prefix is resized!
@@ -215,34 +217,6 @@ class HumanPose3D():
         if not self.pred_recv: 
             rospy.logwarn_throttle(1, "Prediction is not recieved! Check topic names, camera type and model initialization!")
 
-    # TODO: This should be moved to the utils method
-    def create_ROSmsg(self, pos_named): 
-
-        msg = TorsoJointPositions()
-        msg.header          = self.pcl.header
-        msg.frame_id.data        = "camera_color_frame"
-        try:
-            # COCO doesn't have THORAX!
-            if self.coco or self.body25: 
-                thorax = Vector3((pos_named["l_shoulder"][0] + pos_named["r_shoulder"][0])/2, 
-                                 (pos_named["l_shoulder"][1] + pos_named["r_shoulder"][1])/2, 
-                                 (pos_named["l_shoulder"][2] + pos_named["r_shoulder"][2])/2)
-                msg.thorax = thorax
-            else: 
-                msg.thorax      = Vector3(pos_named["thorax"][0], pos_named["thorax"][1], pos_named["thorax"][2])
-            msg.left_elbow      = Vector3(pos_named["l_elbow"][0], pos_named["l_elbow"][1], pos_named["l_elbow"][2])
-            msg.right_elbow     = Vector3(pos_named["r_elbow"][0], pos_named["r_elbow"][1], pos_named["r_elbow"][2])
-            msg.left_shoulder   = Vector3(pos_named["l_shoulder"][0], pos_named["l_shoulder"][1], pos_named["l_shoulder"][2])
-            msg.right_shoulder  = Vector3(pos_named["r_shoulder"][0], pos_named["r_shoulder"][1], pos_named["r_shoulder"][2])
-            msg.left_wrist      = Vector3(pos_named["l_wrist"][0], pos_named["l_wrist"][1], pos_named["l_wrist"][2])
-            msg.right_wrist     = Vector3(pos_named["r_wrist"][0], pos_named["r_wrist"][1], pos_named["r_wrist"][2])
-            msg.success.data = True
-            rospy.logdebug("Created ROS msg!")
-        except Exception as e:
-            msg.success.data = False 
-            rospy.logwarn_throttle(2, "Create ROS msg failed: {}".format(e))
-        return msg
-
     def get_and_pub_keypoints(self, keypoints, indexing):
         # Get X,Y,Z coordinates for predictions
         coords = self.get_coordinates(self.pcl, keypoints, "xyz") 
@@ -251,6 +225,26 @@ class HumanPose3D():
         # Send transforms with tf broadcaster
         self.send_transforms(hpe_tfs, indexing)
         return coords
+    
+    def remapping(self, P3D, H3D):
+        """
+            Remap the input to the desired output
+            Input: 
+                P3D: 3D points of the detected person
+                H3D: 3D points of the detected hand
+            Output: 
+                U: Remapped input
+        """
+        ap_names = ["r_shoulder", "l_elbow"]
+        mp_names = ["r_wrist", "l_wrist"]
+        # Get this from values
+        ap = [6, 7]
+        mp = [9, 10]
+        # TODO: Map into number depending on input values :) 
+        O_ = createOmatrix(17, 2, ap, mp)
+        rospy.loginfo(O_)
+        U = createUmatrix(P3D.squeeze(), O_)
+        return U
 
     def run(self): 
         while not rospy.is_shutdown(): 
@@ -263,8 +257,12 @@ class HumanPose3D():
                     start_time = rospy.Time.now().to_sec()
                     if self.HPE: 
                         pts = self.get_and_pub_keypoints(self.r_hpe_preds, self.hpe_indexing)
+                        # These are measurements that could be given to the Kalman for example
                         P3D = dict_to_matrix(pts)
-                        rospy.loginfo("P3D: {}".format(P3D))
+                        u = self.remapping(P3D, None)
+                        rospy.loginfo("U is: {}".format(u))                        
+                        # TODO: Output to file or some kind of database for testing/debugging 
+                        # rospy.loginfo("P3D: {}".format(P3D))
                     if self.HAND: 
                         pts = self.get_and_pub_keypoints(self.r_hand_preds, self.hand_indexing)
                         H3D = dict_to_matrix(pts)
@@ -273,7 +271,6 @@ class HumanPose3D():
                         duration = rospy.Time.now().to_sec() - start_time
                         rospy.logdebug("Run t: {}".format(duration)) # --> very fast!
                     self.rate.sleep()
-
                 else: 
                     self.debug_print()
             
