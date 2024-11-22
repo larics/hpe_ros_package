@@ -74,10 +74,10 @@ class HumanPose3D():
                               9: "l_wrist", 10: "r_wrist", 11: "l_hip", 12: "r_hip",
                               13: "l_knee", 14: "r_knee", 15: "l_ankle", 16: "r_ankle", 17: "background"}
 
-        self.hand_indexing = {0: "wrist", 1: "thumb0", 2: "thumb1", 3: "thumb2", 4: "thumb3",
-                              5: "index0", 6: "index1", 7: "index2", 8: "index3", 9: "middle0",
-                             10: "middle1", 11: "middle2", 12: "middle3", 13: "ring0", 14: "ring1",
-                             15: "ring2", 16: "ring3", 17: "pinky0", 18: "pinky1", 19: "pinky2", 20: "pinky3"}
+        self.hand_indexing = {0: "wrist", 1: "thumb3", 2: "thumb2", 3: "thumb1", 4: "thumb0",
+                              5: "index3", 6: "index2", 7: "index1", 8: "index0", 9: "middle3",
+                             10: "middle2", 11: "middle1", 12: "middle0", 13: "ring3", 14: "ring2",
+                             15: "ring1", 16: "ring0", 17: "pinky3", 18: "pinky2", 19: "pinky1", 20: "pinky0"}
         
         # Hand tree should be [How to include implicit knowledge about the hand in the prediction?]
         # That's one of the questions that could arise, and how to differentiate between left and right hand? 
