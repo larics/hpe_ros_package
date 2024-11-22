@@ -197,3 +197,11 @@ def resize_preds_on_original_size(preds, img_size):
         avg_h = (floor_h + ceil_h) / 2
         resized_preds.append([int(avg_w), int(avg_h)])
     return resized_preds
+
+def remove_nans(matrix): 
+    """
+    Swap nans with zeros in a matrix.
+    """
+    #swap nans with zeros
+    matrix[np.isnan(matrix)] = 0
+    return matrix

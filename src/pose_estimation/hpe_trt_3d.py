@@ -13,7 +13,7 @@ from img_utils import convert_pil_to_ros_img
 
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from std_msgs.msg import Int64MultiArray
-from geometry_msgs.msg import Vector3
+from geometry_msgs.msg import Vector3, PoseStamped
 from hpe_ros_msgs.msg import TorsoJointPositions, HumanPose2D, HandPose2D
 
 import message_filters
@@ -21,9 +21,9 @@ import message_filters
 import sensor_msgs.point_cloud2 as pc2
 
 from utils import unpackHandPose2DMsg, unpackHumanPose2DMsg, \
-    get_RotX, get_RotY, get_RotZ, resize_preds_on_original_size, dict_to_matrix, get_key_by_value
+    get_RotX, get_RotY, get_RotZ, resize_preds_on_original_size, dict_to_matrix, get_key_by_value, remove_nans
 
-from input_remapping import createOmatrix, createUmatrix
+from input_remapping import createOmatrix, createUmatrix, tfU2Vect3, tfU2Pose
 
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
@@ -85,7 +85,7 @@ class HumanPose3D():
         # 0 -> wrist -> 0 pinky  -> 1 pinky  -> 2 pinky
 
         # TODO: Check hand working 
-        self.HPE = True; self.HAND = True
+        self.HPE = True; self.HAND = False
         self.camera_frame_name = "camera_color_frame"
         # Initialize transform broadcaster 
         # ATM just a stupid way to publish joint estimates              
@@ -99,7 +99,8 @@ class HumanPose3D():
         self.camera_sub         = rospy.Subscriber("/oak/rgb/image_raw", Image, self.image_cb, queue_size=1)
         self.depth_sub          = rospy.Subscriber("/oak/points", PointCloud2, self.pcl_cb, queue_size=1)
         self.depth_cinfo_sub    = rospy.Subscriber("/oak/stereo/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
-        # Subscription to predictions
+        # Subscription to predictions 
+        # TODO: Add message synchronization for predictions --> MUST!
         self.hpe_2d_sub         = rospy.Subscriber("/hpe_2d", HumanPose2D, self.hpe2d_cb, queue_size=1)
         self.hand_2d_sub        = rospy.Subscriber("/hand_2d", HandPose2D, self.hand2d_cb, queue_size=1)
         # Values with rs_compat = true
@@ -112,7 +113,14 @@ class HumanPose3D():
         self.left_wrist_pub     = rospy.Publisher("leftw_point", Vector3, queue_size=1)
         self.right_wrist_pub    = rospy.Publisher("rightw_point", Vector3, queue_size=1)
         self.upper_body_3d_pub  = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
+        # Debug topics
+        self.vect1_pub = rospy.Publisher("vect1", Vector3, queue_size=1)
+        self.vect2_pub = rospy.Publisher("vect2", Vector3, queue_size=1)
+        self.vect3_pub = rospy.Publisher("vect3", Vector3, queue_size=1)
+        self.vect4_pub = rospy.Publisher("vect4", Vector3, queue_size=1)
         rospy.loginfo("Initialized publishers!")
+        self.pose1_pub = rospy.Publisher("pose1", PoseStamped, queue_size=1)
+        self.pose2_pub = rospy.Publisher("pose2", PoseStamped, queue_size=1)
 
     def image_cb(self, msg): 
         self.img        = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, -1)
@@ -225,25 +233,31 @@ class HumanPose3D():
         self.send_transforms(hpe_tfs, indexing)
         return coords
     
-    def remapping(self, pts, indexing, ap_names, mp_names):
+    # Debug methods
+    def publish_vectors(self, vects_):
+        self.vect1_pub.publish(vects_[0])
+        self.vect2_pub.publish(vects_[1])
+    
+    def publish_poses(self, poses_):
+        self.pose1_pub.publish(poses_[0])
+        self.pose2_pub.publish(poses_[1])
+    
+    def remapping(self, p3D, indexing, ap_names, mp_names):
         """
             Remap the input to the desired output
             Input: 
-                P3D: 3D points of the detected person
-                H3D: 3D points of the detected hand
+                P3D: 3D points of the detections
                 ap_names: Names of the anchor points
                 mp_names: Names of the mapping points
             Output: 
                 U: Remapped input
         """
-        
         ap = [get_key_by_value(indexing, ap_name) for ap_name in ap_names]
         mp = [get_key_by_value(indexing, mp_name) for mp_name in mp_names]
-        # Currently number of anchor points defines number of inputs
-        n_u = len(ap); n_k = pts.size()[0] 
-        # If we use anchor points len(ap) == len(mp)
+        n_u = len(ap) # no of anchor points defines number of inputs
+        n_k = p3D.shape[1] # no of motion points defines number of keypoitns [column in p3D]
         O_ = createOmatrix(n_k, n_u, ap, mp)
-        U = createUmatrix(pts.squeeze(), O_)
+        U = createUmatrix(p3D.squeeze(), O_)
         return U
 
     def run(self): 
@@ -259,10 +273,13 @@ class HumanPose3D():
                         pts = self.get_and_pub_keypoints(self.r_hpe_preds, self.hpe_indexing)
                         # These are measurements that could be given to the Kalman for example
                         P3D = dict_to_matrix(pts)
-                        u = self.remapping(P3D, self.hpe_indexing, ["l_shoulder", "r_shoulder"], ["l_wrist", "r_wrist"])
-                        rospy.loginfo("U is: {}".format(u))                        
-                        # TODO: Output to file or some kind of database for testing/debugging 
-                        # rospy.loginfo("P3D: {}".format(P3D))
+                        P3D = remove_nans(P3D) # Nans fu*k up the matrix multiplication
+                        rospy.loginfo(f"P3D is: {P3D}")
+                        u = self.remapping(P3D, self.hpe_indexing, ["r_shoulder", "l_shoulder"], ["r_wrist", "l_wrist"])
+                        vects_ = tfU2Vect3(u)
+                        poses_ = tfU2Pose(u)
+                        self.publish_vectors(vects_)
+                        self.publish_poses(poses_)
                     if self.HAND: 
                         pts = self.get_and_pub_keypoints(self.r_hand_preds, self.hand_indexing)
                         H3D = dict_to_matrix(pts)
