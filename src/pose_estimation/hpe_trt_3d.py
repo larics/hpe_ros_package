@@ -13,7 +13,7 @@ from img_utils import convert_pil_to_ros_img
 
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from std_msgs.msg import Int64MultiArray
-from geometry_msgs.msg import Vector3
+from geometry_msgs.msg import Vector3, PoseStamped
 from hpe_ros_msgs.msg import TorsoJointPositions, HumanPose2D, HandPose2D
 
 import message_filters
@@ -21,7 +21,9 @@ import message_filters
 import sensor_msgs.point_cloud2 as pc2
 
 from utils import unpackHandPose2DMsg, unpackHumanPose2DMsg, \
-    get_RotX, get_RotY, get_RotZ, resize_preds_on_original_size
+    get_RotX, get_RotY, get_RotZ, resize_preds_on_original_size, dict_to_matrix, get_key_by_value, remove_nans
+
+from input_remapping import createOmatrix, createUmatrix, tfU2Vect3, tfU2Pose
 
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
@@ -59,6 +61,9 @@ class HumanPose3D():
         # Code pruning uneccessary indexing for TRT
         self.coco = True
 
+        # Sync depth and prediction
+        self.sync = True
+
         # Initialize publishers and subscribers
         self._init_subscribers()
         self._init_publishers()
@@ -69,10 +74,18 @@ class HumanPose3D():
                               9: "l_wrist", 10: "r_wrist", 11: "l_hip", 12: "r_hip",
                               13: "l_knee", 14: "r_knee", 15: "l_ankle", 16: "r_ankle", 17: "background"}
 
-        self.hand_indexing = {0: "wrist", 1: "thumb0", 2: "thumb1", 3: "thumb2", 4: "thumb3",
-                              5: "index0", 6: "index1", 7: "index2", 8: "index3", 9: "middle0",
-                             10: "middle1", 11: "middle2", 12: "middle3", 13: "ring0", 14: "ring1",
-                             15: "ring2", 16: "ring3", 17: "pinky0", 18: "pinky1", 19: "pinky2", 20: "pinky3"}
+        self.hand_indexing = {0: "wrist", 1: "thumb3", 2: "thumb2", 3: "thumb1", 4: "thumb0",
+                              5: "index3", 6: "index2", 7: "index1", 8: "index0", 9: "middle3",
+                             10: "middle2", 11: "middle1", 12: "middle0", 13: "ring3", 14: "ring2",
+                             15: "ring1", 16: "ring0", 17: "pinky3", 18: "pinky2", 19: "pinky1", 20: "pinky0"}
+        
+        # Hand tree should be [How to include implicit knowledge about the hand in the prediction?]
+        # That's one of the questions that could arise, and how to differentiate between left and right hand? 
+        # 0 -> wrist -> 0 thumb  -> 1 thumb  -> 2 thumb 
+        # 0 -> wrist -> 0 index  -> 1 index  -> 2 index 
+        # 0 -> wrist -> 0 middle -> 1 middle -> 2 middle
+        # 0 -> wrist -> 0 ring   -> 1 ring   -> 2 ring
+        # 0 -> wrist -> 0 pinky  -> 1 pinky  -> 2 pinky
 
         # TODO: Check hand working 
         self.HPE = True; self.HAND = False
@@ -89,7 +102,7 @@ class HumanPose3D():
         self.camera_sub         = rospy.Subscriber("/oak/rgb/image_raw", Image, self.image_cb, queue_size=1)
         self.depth_sub          = rospy.Subscriber("/oak/points", PointCloud2, self.pcl_cb, queue_size=1)
         self.depth_cinfo_sub    = rospy.Subscriber("/oak/stereo/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
-        # Subscription to predictions
+        # Subscription to predictions 
         self.hpe_2d_sub         = rospy.Subscriber("/hpe_2d", HumanPose2D, self.hpe2d_cb, queue_size=1)
         self.hand_2d_sub        = rospy.Subscriber("/hand_2d", HandPose2D, self.hand2d_cb, queue_size=1)
         # Values with rs_compat = true
@@ -98,11 +111,25 @@ class HumanPose3D():
         self.depth_cinfo_sub    = rospy.Subscriber("/camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
         rospy.loginfo("Initialized subscribers!")
 
+        if self.sync: 
+            # It would make sense even to add HandPose2D to the sync_cb
+            self.hpe_2d_sub = message_filters.Subscriber("/hpe_2d", HumanPose2D)
+            self.depth_sub = message_filters.Subscriber("/camera/depth/color/points", PointCloud2)
+            self.ts = message_filters.TimeSynchronizer([self.hpe_2d_sub, self.depth_sub], 5)
+            self.ts.registerCallback(self.sync_cb)
+
     def _init_publishers(self): 
         self.left_wrist_pub     = rospy.Publisher("leftw_point", Vector3, queue_size=1)
         self.right_wrist_pub    = rospy.Publisher("rightw_point", Vector3, queue_size=1)
         self.upper_body_3d_pub  = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
+        # Debug topics
+        self.vect1_pub = rospy.Publisher("vect1", Vector3, queue_size=1)
+        self.vect2_pub = rospy.Publisher("vect2", Vector3, queue_size=1)
+        self.vect3_pub = rospy.Publisher("vect3", Vector3, queue_size=1)
+        self.vect4_pub = rospy.Publisher("vect4", Vector3, queue_size=1)
         rospy.loginfo("Initialized publishers!")
+        self.pose1_pub = rospy.Publisher("pose1", PoseStamped, queue_size=1)
+        self.pose2_pub = rospy.Publisher("pose2", PoseStamped, queue_size=1)
 
     def image_cb(self, msg): 
         self.img        = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, -1)
@@ -112,12 +139,19 @@ class HumanPose3D():
         self.pcl        = msg
         self.pcl_recv   = True
 
-    # TODO: Move to utils
     def hpe2d_cb(self, msg): 
         hpe_pxs = unpackHumanPose2DMsg(msg)
         # r_prefix is resized!
         self.r_hpe_preds = resize_preds_on_original_size(hpe_pxs, (self.dpth_img_width, self.dpth_img_height))
         self.pred_recv = True
+
+    def sync_cb(self, hpe_msg, pcl_msg):
+        hpe_pxs = unpackHumanPose2DMsg(hpe_msg)
+        self.r_hpe_preds = resize_preds_on_original_size(hpe_pxs, (self.dpth_img_width, self.dpth_img_height))
+        self.pred_recv = True
+        self.pcl = pcl_msg
+        self.pcl_recv = True
+        rospy.loginfo_throttle(1, "Synced callback!")
 
     def hand2d_cb(self, msg):
         hand_pxs = unpackHandPose2DMsg(msg)
@@ -152,7 +186,6 @@ class HumanPose3D():
         pos_named = {}
         for i, (x, y, z) in enumerate(zip(coords["x"], coords["y"], coords["z"])): 
             nan_cond =  not np.isnan(x) and not np.isnan(y) and not np.isnan(z)
-            rospy.loginfo("Nan condition: {}, i: {}, indexing: {}".format(nan_cond, i, indexing[i]))
             if nan_cond: 
                 # OLD P 
                 #p = np.array([z[0], y[0], x[0]]) # Swapped z, y, x to hit correct dimension
@@ -162,15 +195,12 @@ class HumanPose3D():
                 #pos_named["{}".format(self.indexing[i])] = (rotP[0], -rotP[1], rotP[2])
                 # NEW P CALC
                 p = np.array([x[0], y[0], z[0]]) 
-
                 x_rot = self.init_x_rot
                 y_rot = self.init_y_rot
                 z_rot = self.init_z_rot
-
                 p = self.getP(p, x_rot, y_rot, z_rot, "xyz", "degrees") # TF from camera frame to the orientation human HAS!
                 kp_tf["{}".format(i)] = p
                 pos_named["{}".format(indexing[i])] = p
-        rospy.loginfo(pos_named)
         return kp_tf, pos_named
 
     def getP(self, p, angle_x_axis, angle_y_axis, angle_z_axis, order, format="radians"):
@@ -201,9 +231,7 @@ class HumanPose3D():
             # Each of this tf-s is basically distance from camera_frame_name to some other coordinate frame :) 
             # use lookupTransform to fetch transform and estimate angles... 
 
-
     def debug_print(self): 
-
         if not self.img_recv:
             rospy.logwarn_throttle(1, "Image is not recieved! Check camera and topic name.")
         if not self.pcl_recv: 
@@ -213,80 +241,70 @@ class HumanPose3D():
         if not self.pred_recv: 
             rospy.logwarn_throttle(1, "Prediction is not recieved! Check topic names, camera type and model initialization!")
 
-    # TODO: This should be moved to the utils method
-    def create_ROSmsg(self, pos_named): 
-
-        msg = TorsoJointPositions()
-        msg.header          = self.pcl.header
-        msg.frame_id.data        = "camera_color_frame"
-        try:
-            # COCO doesn't have THORAX!
-            if self.coco or self.body25: 
-                thorax = Vector3((pos_named["l_shoulder"][0] + pos_named["r_shoulder"][0])/2, 
-                                 (pos_named["l_shoulder"][1] + pos_named["r_shoulder"][1])/2, 
-                                 (pos_named["l_shoulder"][2] + pos_named["r_shoulder"][2])/2)
-                msg.thorax = thorax
-            else: 
-                msg.thorax      = Vector3(pos_named["thorax"][0], pos_named["thorax"][1], pos_named["thorax"][2])
-            msg.left_elbow      = Vector3(pos_named["l_elbow"][0], pos_named["l_elbow"][1], pos_named["l_elbow"][2])
-            msg.right_elbow     = Vector3(pos_named["r_elbow"][0], pos_named["r_elbow"][1], pos_named["r_elbow"][2])
-            msg.left_shoulder   = Vector3(pos_named["l_shoulder"][0], pos_named["l_shoulder"][1], pos_named["l_shoulder"][2])
-            msg.right_shoulder  = Vector3(pos_named["r_shoulder"][0], pos_named["r_shoulder"][1], pos_named["r_shoulder"][2])
-            msg.left_wrist      = Vector3(pos_named["l_wrist"][0], pos_named["l_wrist"][1], pos_named["l_wrist"][2])
-            msg.right_wrist     = Vector3(pos_named["r_wrist"][0], pos_named["r_wrist"][1], pos_named["r_wrist"][2])
-            msg.success.data = True
-            rospy.logdebug("Created ROS msg!")
-        except Exception as e:
-            msg.success.data = False 
-            rospy.logwarn_throttle(2, "Create ROS msg failed: {}".format(e))
-
-        return msg
+    def get_and_pub_keypoints(self, keypoints, indexing):
+        # Get X,Y,Z coordinates for predictions
+        coords = self.get_coordinates(self.pcl, keypoints, "xyz") 
+        # Create coordinate frames
+        hpe_tfs, hpe_pos_named = self.create_keypoint_tfs(coords, indexing)
+        # Send transforms with tf broadcaster
+        self.send_transforms(hpe_tfs, indexing)
+        return coords
+    
+    # Debug methods
+    def publish_vectors(self, vects_):
+        self.vect1_pub.publish(vects_[0])
+        self.vect2_pub.publish(vects_[1])
+    
+    def publish_poses(self, poses_):
+        self.pose1_pub.publish(poses_[0])
+        self.pose2_pub.publish(poses_[1])
+    
+    def remapping(self, p3D, indexing, ap_names, mp_names):
+        """
+            Remap the input to the desired output
+            Input: 
+                P3D: 3D points of the detections
+                ap_names: Names of the anchor points
+                mp_names: Names of the mapping points
+            Output: 
+                U: Remapped input
+        """
+        ap = [get_key_by_value(indexing, ap_name) for ap_name in ap_names]
+        mp = [get_key_by_value(indexing, mp_name) for mp_name in mp_names]
+        n_u = len(ap) # no of anchor points defines number of inputs
+        n_k = p3D.shape[1] # no of motion points defines number of keypoitns [column in p3D]
+        O_ = createOmatrix(n_k, n_u, ap, mp)
+        U = createUmatrix(p3D.squeeze(), O_)
+        return U
 
     def run(self): 
-
         while not rospy.is_shutdown(): 
-            
+            # Condition to run the code
             run_ready = self.img_recv and self.cinfo_recv and self.pcl_recv and self.pred_recv
             try:
                 # TODO: Decouple hand and the rest of the body in some way
                 if run_ready: 
                     rospy.loginfo_throttle(30, "Publishing HPE3d!")
-                    # Maybe save indices for easier debugging
                     start_time = rospy.Time.now().to_sec()
-                    # Get X,Y,Z coordinates for predictions
                     if self.HPE: 
-                        if self.resize_predictions:
-                            hpe_coords = self.get_coordinates(self.pcl, self.r_hpe_preds, "xyz") 
-                        else: 
-                            hpe_coords = self.get_coordinates(self.pcl, self.predictions, "xyz")
-                        # Create coordinate frames
-                        hpe_tfs, hpe_pos_named = self.create_keypoint_tfs(hpe_coords, self.hpe_indexing)
-                        # Send transforms
-                        self.send_transforms(hpe_tfs, self.hpe_indexing)
-                        # Publish created ROS msg 
-                        msg = self.create_ROSmsg(hpe_pos_named)
-                        if msg: 
-                            self.upper_body_3d_pub.publish(msg)
-                    
+                        pts = self.get_and_pub_keypoints(self.r_hpe_preds, self.hpe_indexing)
+                        # These are measurements that could be given to the Kalman for example
+                        P3D = dict_to_matrix(pts)
+                        # Nans fu*k up the matrix multiplication
+                        P3D = remove_nans(P3D) 
+                        u = self.remapping(P3D, self.hpe_indexing,
+                                          ["r_shoulder", "l_shoulder"],
+                                          ["r_wrist", "l_wrist"])
+                        vects_ = tfU2Vect3(u); self.publish_vectors(vects_)
+                        poses_ = tfU2Pose(u); self.publish_poses(poses_)                      
                     if self.HAND: 
-                        if self.resize_predictions:
-                            hand_coords = self.get_coordinates(self.pcl, self.r_hand_preds, "xyz")
-                        else: 
-                            hand_coords = self.get_coordinates(self.pcl, self.predictions, "xyz")
-                        hand_tfs, hand_pos_named = self.create_keypoint_tfs(hand_coords, self.hand_indexing)
-                        self.send_transforms(hand_tfs, self.hand_indexing)
-                        # Publish created ROS msg 
-                        msg = self.create_ROSmsg(hand_pos_named)
-                        if msg: 
-                            self.upper_body_3d_pub.publish(msg)
-
+                        pts = self.get_and_pub_keypoints(self.r_hand_preds, self.hand_indexing)
+                        H3D = dict_to_matrix(pts)
                     measure_runtime = False; 
                     if measure_runtime:
                         duration = rospy.Time.now().to_sec() - start_time
                         rospy.logdebug("Run t: {}".format(duration)) # --> very fast!
-
                     self.rate.sleep()
-
                 else: 
                     self.debug_print()
             

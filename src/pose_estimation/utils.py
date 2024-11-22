@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
-from hpe_ros_msgs.msg import HumanPose2D, HandPose2D
+from hpe_ros_msgs.msg import HumanPose2D, HandPose2D, TorsoJointPositions
+from geometry_msgs.msg import Vector3
 import numpy as np
 
 def limitCmd(cmd, upperLimit, lowerLimit):
@@ -138,11 +139,69 @@ def unpackHandPose2DMsg(msg):
     hand_keypoints.append((msg.pinky3.x, msg.pinky3.y))
     return hand_keypoints
 
+def dict_to_matrix(data_dict):
+    """
+    Converts a dictionary with keys x, y, z, and their corresponding lists
+    into a numpy matrix of shape (3, len(list_per_key)).
+
+    Parameters:
+        data_dict (dict): A dictionary with keys 'x', 'y', and 'z'.
+
+    Returns:
+        numpy.ndarray: A matrix with x values in the first row,
+                       y values in the second row,
+                       z values in the third row.
+    """
+    return np.array([data_dict['x'], data_dict['y'], data_dict['z']])
+
+def get_key_by_value(d, value):
+    """
+    Finds and returns the key corresponding to a given value in a dictionary.
+
+    Parameters:
+        d (dict): The dictionary to search.
+        value: The value to find the corresponding key for.
+
+    Returns:
+        The key associated with the value if found, or None if the value is not in the dictionary.
+    """
+    for key, val in d.items():
+        if val == value:
+            return key
+    return None
+
+def get_allocation_matrix(n, m): 
+    """
+    Create an allocation matrix of size n x m. 
+    """
+    return np.zeros((n, m))
+
+def index_and_operation(A, keys, indices, operation): 
+    """ 
+    Method prototype, probably should include some overloading. 
+    """
+    A = get_allocation_matrix((len(keys), 3))
+
 # Losing precision here [How to quantify lost precision here?]
 def resize_preds_on_original_size(preds, img_size):
     resized_preds = []
     for pred in preds: 
         p_w, p_h = pred[0], pred[1]
-        resized_preds.append([int(np.floor(p_w/224*img_size[0])),
-                            int(np.floor(p_h/224*img_size[1]))])
+        # This resize is bad, because it floors and it is not correct I would say
+        # Test floor, test ceil and test average of floor and ceil
+        floor_w = np.floor(p_w/224 * img_size[0])
+        floor_h = np.floor(p_h/224 * img_size[1])
+        ceil_w = np.ceil(p_w/224 * img_size[0])
+        ceil_h = np.ceil(p_h/224 * img_size[1])
+        avg_w = (floor_w + ceil_w) / 2
+        avg_h = (floor_h + ceil_h) / 2
+        resized_preds.append([int(avg_w), int(avg_h)])
     return resized_preds
+
+def remove_nans(matrix): 
+    """
+    Swap nans with zeros in a matrix.
+    """
+    #swap nans with zeros
+    matrix[np.isnan(matrix)] = 0
+    return matrix
