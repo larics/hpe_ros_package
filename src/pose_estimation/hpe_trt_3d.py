@@ -61,6 +61,9 @@ class HumanPose3D():
         # Code pruning uneccessary indexing for TRT
         self.coco = True
 
+        # Sync depth and prediction
+        self.sync = True
+
         # Initialize publishers and subscribers
         self._init_subscribers()
         self._init_publishers()
@@ -100,7 +103,6 @@ class HumanPose3D():
         self.depth_sub          = rospy.Subscriber("/oak/points", PointCloud2, self.pcl_cb, queue_size=1)
         self.depth_cinfo_sub    = rospy.Subscriber("/oak/stereo/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
         # Subscription to predictions 
-        # TODO: Add message synchronization for predictions --> MUST!
         self.hpe_2d_sub         = rospy.Subscriber("/hpe_2d", HumanPose2D, self.hpe2d_cb, queue_size=1)
         self.hand_2d_sub        = rospy.Subscriber("/hand_2d", HandPose2D, self.hand2d_cb, queue_size=1)
         # Values with rs_compat = true
@@ -108,6 +110,13 @@ class HumanPose3D():
         self.depth_sub          = rospy.Subscriber("/camera/depth/color/points", PointCloud2, self.pcl_cb, queue_size=1)
         self.depth_cinfo_sub    = rospy.Subscriber("/camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
         rospy.loginfo("Initialized subscribers!")
+
+        if self.sync: 
+            # It would make sense even to add HandPose2D to the sync_cb
+            self.hpe_2d_sub = message_filters.Subscriber("/hpe_2d", HumanPose2D)
+            self.depth_sub = message_filters.Subscriber("/camera/depth/color/points", PointCloud2)
+            self.ts = message_filters.TimeSynchronizer([self.hpe_2d_sub, self.depth_sub], 5)
+            self.ts.registerCallback(self.sync_cb)
 
     def _init_publishers(self): 
         self.left_wrist_pub     = rospy.Publisher("leftw_point", Vector3, queue_size=1)
@@ -135,6 +144,14 @@ class HumanPose3D():
         # r_prefix is resized!
         self.r_hpe_preds = resize_preds_on_original_size(hpe_pxs, (self.dpth_img_width, self.dpth_img_height))
         self.pred_recv = True
+
+    def sync_cb(self, hpe_msg, pcl_msg):
+        hpe_pxs = unpackHumanPose2DMsg(hpe_msg)
+        self.r_hpe_preds = resize_preds_on_original_size(hpe_pxs, (self.dpth_img_width, self.dpth_img_height))
+        self.pred_recv = True
+        self.pcl = pcl_msg
+        self.pcl_recv = True
+        rospy.loginfo_throttle(1, "Synced callback!")
 
     def hand2d_cb(self, msg):
         hand_pxs = unpackHandPose2DMsg(msg)
@@ -273,13 +290,13 @@ class HumanPose3D():
                         pts = self.get_and_pub_keypoints(self.r_hpe_preds, self.hpe_indexing)
                         # These are measurements that could be given to the Kalman for example
                         P3D = dict_to_matrix(pts)
-                        P3D = remove_nans(P3D) # Nans fu*k up the matrix multiplication
-                        rospy.loginfo(f"P3D is: {P3D}")
-                        u = self.remapping(P3D, self.hpe_indexing, ["r_shoulder", "l_shoulder"], ["r_wrist", "l_wrist"])
-                        vects_ = tfU2Vect3(u)
-                        poses_ = tfU2Pose(u)
-                        self.publish_vectors(vects_)
-                        self.publish_poses(poses_)
+                        # Nans fu*k up the matrix multiplication
+                        P3D = remove_nans(P3D) 
+                        u = self.remapping(P3D, self.hpe_indexing,
+                                          ["r_shoulder", "l_shoulder"],
+                                          ["r_wrist", "l_wrist"])
+                        vects_ = tfU2Vect3(u); self.publish_vectors(vects_)
+                        poses_ = tfU2Pose(u); self.publish_poses(poses_)                      
                     if self.HAND: 
                         pts = self.get_and_pub_keypoints(self.r_hand_preds, self.hand_indexing)
                         H3D = dict_to_matrix(pts)
