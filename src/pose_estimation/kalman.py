@@ -45,7 +45,7 @@ class KalmanFilterPy():
                         [0], 
                         [0]])
 
-        # State transition 
+        # State transition [Constant velocity/acceleration model]
         kf.F = np.array([[1., 0.04, 0., 0.00, 0., 0.00], 
                         [0., 1.00, 0., 0.00, 0., 0.00], 
                         [0., 0.00, 1., 0.04, 0., 0.00], 
@@ -153,6 +153,8 @@ class KalmanFilterPy():
 
             if run_ready: 
                 rospy.loginfo_throttle(30, "Kalman filter running")
+                rospy.logdebug_throttle(1, f"Kalman covariance: {self.leftKf.P}")
+                rospy.logdebug_throttle(1, f"Kalman covariance: {self.rightKf.P}")
                 self.kalman_right_arm_pub.publish(self.kalmanRightArmMsg)
                 self.kalman_left_arm_pub.publish(self.kalmanLeftArmMsg) 
                 self.rate.sleep()

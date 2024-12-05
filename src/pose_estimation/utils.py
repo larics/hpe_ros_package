@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
-from hpe_ros_msgs.msg import HumanPose2D, HandPose2D, TorsoJointPositions
-from geometry_msgs.msg import Vector3
+from hpe_ros_msgs.msg import HumanPose2D, HandPose2D, HumanPose3D, TorsoJointPositions
+from geometry_msgs.msg import Vector3, Point
 import numpy as np
 
 def limitCmd(cmd, upperLimit, lowerLimit):
@@ -16,6 +16,13 @@ def arrayToVect(array, vect):
     vect.y = array[1]
     vect.z = array[2]
     return vect
+
+def arrayToPoint(array, point):
+    point.x = array[0]
+    point.y = array[1]
+    point.z = array[2]
+    return point
+
 
 # Create Rotation matrices
 def get_RotX(angle):  
@@ -41,6 +48,20 @@ def get_RotZ(angle):
     
     return RZ
 
+def packTorsoPositionMsg(now, keypoints):
+    msg = TorsoJointPositions()
+    msg.header.stamp = now
+    msg.frame_id.data = "world"
+    msg.thorax = arrayToVect([keypoints[0, 1], keypoints[1, 1], keypoints[2, 5]], msg.thorax)
+    msg.left_shoulder = arrayToVect(keypoints[:, 5], msg.left_shoulder)
+    msg.right_shoulder = arrayToVect(keypoints[:, 6], msg.right_shoulder)
+    msg.right_elbow = arrayToVect(keypoints[:, 7], msg.right_elbow)
+    msg.left_elbow = arrayToVect(keypoints[:, 8], msg.left_elbow)
+    msg.right_wrist = arrayToVect(keypoints[:, 10], msg.right_wrist)
+    msg.left_wrist = arrayToVect(keypoints[:, 9], msg.left_wrist)
+    #msg.success = True
+    return msg
+
 # Pack and unpack ROS messages for HumanPose2D and HandPose2D
 def packHumanPose2DMsg(now, keypoints):
     # Create ROS msg based on the keypoints
@@ -64,6 +85,28 @@ def packHumanPose2DMsg(now, keypoints):
     msg.r_knee.x = keypoints[14][0]; msg.r_knee.y = keypoints[14][1]
     msg.l_ankle.x = keypoints[15][0]; msg.l_ankle.y = keypoints[15][1]
     msg.r_ankle.x = keypoints[16][0]; msg.r_ankle.y = keypoints[16][1]
+    return msg
+
+def packHumanPose3DMsg(now, keypoints):
+    msg = HumanPose3D()
+    msg.header.stamp = now
+    msg.nose        = arrayToPoint(keypoints[:, 0], msg.nose)
+    msg.l_eye       = arrayToPoint(keypoints[:, 1], msg.l_eye)
+    msg.r_eye       = arrayToPoint(keypoints[:, 2], msg.r_eye)
+    msg.l_ear       = arrayToPoint(keypoints[:, 3], msg.l_ear)
+    msg.r_ear       = arrayToPoint(keypoints[:, 4], msg.r_ear)
+    msg.l_shoulder  = arrayToPoint(keypoints[:, 5], msg.l_shoulder)
+    msg.r_shoulder  = arrayToPoint(keypoints[:, 6], msg.r_shoulder)
+    msg.l_elbow     = arrayToPoint(keypoints[:, 7], msg.l_elbow)
+    msg.r_elbow     = arrayToPoint(keypoints[:, 8], msg.r_elbow)
+    msg.l_wrist     = arrayToPoint(keypoints[:, 9], msg.l_wrist)
+    msg.r_wrist     = arrayToPoint(keypoints[:, 10], msg.r_wrist)
+    msg.l_hip       = arrayToPoint(keypoints[:, 11], msg.l_hip)
+    msg.r_hip       = arrayToPoint(keypoints[:, 12], msg.r_hip)
+    msg.l_knee      = arrayToPoint(keypoints[:, 13], msg.l_knee)
+    msg.r_knee      = arrayToPoint(keypoints[:, 14], msg.r_knee)
+    msg.l_ankle     = arrayToPoint(keypoints[:, 15], msg.l_ankle)
+    msg.r_ankle     = arrayToPoint(keypoints[:, 16], msg.r_ankle)
     return msg
 
 def unpackHumanPose2DMsg(msg):

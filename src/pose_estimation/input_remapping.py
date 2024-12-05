@@ -4,6 +4,7 @@ import numpy as np
 import rospy
 from geometry_msgs.msg import Vector3, PoseStamped
 
+# This is just simple input remapping for the keypoints and anchor points
 def createOmatrix(nk, nu, ap_ix, mp_ix):
     """
         Create the O matrix for the input remapping.
