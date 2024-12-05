@@ -32,6 +32,11 @@ If you want to launch hand pose estimation:
 roslaunch hpe_ros_package hand_trt_inference.launch 
 ```
 
+If you want to launch node that sends commands to arm run following: 
+```
+roslaunch hpe_ros_package hh_trt_3d_ctl.launch
+```
+
 ### Launch human pose and hand estimation 
 
 If you want to launch human pose estimation and hand pose estimation simultaneously run: 
