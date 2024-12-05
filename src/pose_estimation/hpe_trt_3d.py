@@ -20,8 +20,8 @@ import message_filters
 
 import sensor_msgs.point_cloud2 as pc2
 
-from utils import unpackHandPose2DMsg, unpackHumanPose2DMsg, packHumanPose3DMsg, \
-    get_RotX, get_RotY, get_RotZ, resize_preds_on_original_size, dict_to_matrix, get_key_by_value, remove_nans
+# Import all methods from utils
+from utils import *
 
 from input_remapping import createOmatrix, createUmatrix, tfU2Vect3, tfU2Pose
 
@@ -120,6 +120,8 @@ class HHPose3D():
 
     def _init_publishers(self):
         self.hpe_3d_pub  = rospy.Publisher("/hpe_3d", HumanPose3D, queue_size=1)
+        self.torso3d_pub = rospy.Publisher("/torso_3d", TorsoJointPositions, queue_size=1)
+
         # Debug topics
         self.vect1_pub = rospy.Publisher("vect1", Vector3, queue_size=1)
         self.vect2_pub = rospy.Publisher("vect2", Vector3, queue_size=1)
@@ -290,16 +292,22 @@ class HHPose3D():
                         P3D = dict_to_matrix(pts)
                         # Nans fu*k up the matrix multiplication
                         P3D = remove_nans(P3D) 
-                        print(P3D)
-                        print(P3D.squeeze().shape)
                         hpe3dMsg = packHumanPose3DMsg(rospy.Time.now(), P3D.squeeze())
                         self.hpe_3d_pub.publish(hpe3dMsg)
-                        # This should publish relation of the r_shoulder with r_wrist and l_shoulder with l_wrist
+
+                        torso3dMsg = packTorsoPositionMsg(rospy.Time.now(), P3D.squeeze())
+                        #print(torso3dMsg)
+                        self.torso3d_pub.publish(torso3dMsg)
+
+                        # This should publish relation of the r_shoulder with r_wrist and l_shoulder with l_wrist 
+                        # This goes to the remapping part of the code [explain system how it works] 
+                        # This is just basic remapping, there should be better options/solutions to do this
                         u = self.remapping(P3D, self.hpe_indexing,
                                           ["r_shoulder", "l_shoulder"],
                                           ["r_wrist", "l_wrist"])
                         vects_ = tfU2Vect3(u); self.publish_vectors(vects_)
-                        poses_ = tfU2Pose(u); self.publish_poses(poses_)                      
+                        poses_ = tfU2Pose(u); self.publish_poses(poses_)
+
                     if self.HAND: 
                         pts = self.get_and_pub_keypoints(self.r_hand_preds, self.hand_indexing)
                         H3D = dict_to_matrix(pts)

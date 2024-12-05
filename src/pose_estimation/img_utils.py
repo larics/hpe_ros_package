@@ -9,8 +9,6 @@ from PIL import Image as PILImage
 
 from sensor_msgs.msg import Image, CompressedImage, Joy, PointCloud2
 
-
-
 def convert_pil_to_ros_img(img):
         img = img.convert('RGB')
         msg = Image()

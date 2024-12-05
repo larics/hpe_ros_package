@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-from hpe_ros_msgs.msg import HumanPose2D, HandPose2D, HumanPose3D
+from hpe_ros_msgs.msg import HumanPose2D, HandPose2D, HumanPose3D, TorsoJointPositions
 from geometry_msgs.msg import Vector3, Point
 import numpy as np
 
@@ -22,6 +22,7 @@ def arrayToPoint(array, point):
     point.y = array[1]
     point.z = array[2]
     return point
+
 
 # Create Rotation matrices
 def get_RotX(angle):  
@@ -46,6 +47,20 @@ def get_RotZ(angle):
                    [ 0, 0, 1]] )
     
     return RZ
+
+def packTorsoPositionMsg(now, keypoints):
+    msg = TorsoJointPositions()
+    msg.header.stamp = now
+    msg.frame_id.data = "world"
+    msg.thorax = arrayToVect([keypoints[0, 1], keypoints[1, 1], keypoints[2, 5]], msg.thorax)
+    msg.left_shoulder = arrayToVect(keypoints[:, 5], msg.left_shoulder)
+    msg.right_shoulder = arrayToVect(keypoints[:, 6], msg.right_shoulder)
+    msg.right_elbow = arrayToVect(keypoints[:, 7], msg.right_elbow)
+    msg.left_elbow = arrayToVect(keypoints[:, 8], msg.left_elbow)
+    msg.right_wrist = arrayToVect(keypoints[:, 10], msg.right_wrist)
+    msg.left_wrist = arrayToVect(keypoints[:, 9], msg.left_wrist)
+    #msg.success = True
+    return msg
 
 # Pack and unpack ROS messages for HumanPose2D and HandPose2D
 def packHumanPose2DMsg(now, keypoints):

@@ -1,4 +1,4 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 
 import os
 import sys
@@ -66,7 +66,7 @@ class hpe2armcmd():
     def _init_subscribers(self):
 
         #self.hpe_3d_sub         = rospy.Subscriber("camera/color/image_raw", Image, self.hpe3d_cb, queue_size=1)
-        self.hpe_3d_sub = rospy.Subscriber("upper_body_3d", TorsoJointPositions, self.hpe3d_cb, queue_size=1)
+        self.hpe_3d_sub = rospy.Subscriber("torso_3d", TorsoJointPositions, self.hpe3d_cb, queue_size=1)
 
     def _init_publishers(self): 
 
@@ -337,7 +337,6 @@ class hpe2armcmd():
             prev = self.m_dict["{}".format(var_name)][-1]
             self.m_dict["{}".format(var_name)] = self.m_dict["{}".format(var_name)][-window_size:]
             median = np.median(np.sort(self.m_dict["{}".format(var_name)]))
-
 
             return median
     

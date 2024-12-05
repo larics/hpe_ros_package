@@ -20,6 +20,6 @@ topics=(
 
 # Start recording with the specified topics
 echo "Starting rosbag recording for selected topics..."
-rosbag record "${topics[@]}" -O topic2.bag
+rosbag record "${topics[@]}" -O $1.bag
 
 
