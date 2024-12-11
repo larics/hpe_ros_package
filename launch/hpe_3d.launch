@@ -1,7 +1,6 @@
 <launch>
 
 <arg name="frequency" value="25"/>
-<arg name="depth_cam" value="false"/>
 <arg name="openpose" default="true"/>
 <arg name="kalman" default="true"/>
 
