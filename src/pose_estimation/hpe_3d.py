@@ -9,7 +9,7 @@ import numpy as np
 
 from PIL import ImageDraw, ImageFont
 from PIL import Image as PILImage
-from img_utils import convert_pil_to_ros_img
+from img_utils import convert_pil_to_ros_img, convert_ros_to_pil_img, plot_hand_keypoints
 
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from std_msgs.msg import Float64MultiArray
@@ -54,6 +54,10 @@ class HumanPose3D():
 
         # IF openpose: True, ELSE: False
         self.openpose = openpose
+        
+        # If use hands, parse them from frame 
+        self.use_hands = True
+        self.r_hand_predictions, self.l_hand_predictions = [], []
 
         if self.openpose: 
             self.body25 = True
@@ -111,13 +115,13 @@ class HumanPose3D():
             self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 10)
             self.ats.registerCallback(self.frame_pcl_cb)
 
-
         else: 
             self.predictions_sub    = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
         
         rospy.loginfo("Initialized subscribers!")
 
     def _init_publishers(self): 
+        self.debug_plot         = rospy.Publisher("debug_plot", Image, queue_size=1)
         self.left_wrist_pub     = rospy.Publisher("leftw_point", Vector3, queue_size=1)
         self.right_wrist_pub    = rospy.Publisher("rightw_point", Vector3, queue_size=1)
         self.upper_body_3d_pub  = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
@@ -125,8 +129,7 @@ class HumanPose3D():
 
 
     def frame_pcl_cb(self, frame_msg, pcl_msg): 
-
-        #keypoints = msg.data
+        # Used if OpenPose Sync is used 
         rospy.loginfo("Received frame and pcl!")
         persons = frame_msg.persons
         self.predictions = []
@@ -141,13 +144,29 @@ class HumanPose3D():
             
             self.predictions = self.predictions[:18]
             self.pred_recv = True
-
+        try:
+            if self.openpose and self.use_hands: 
+                for i, person in enumerate(persons): 
+                    self.r_hand_predictions = []
+                    self.l_hand_predictions = []
+                    if i == 0: 
+                        for rkp in person.leftHandParts: 
+                            self.r_hand_predictions.append((int(rkp.pixel.x), int(rkp.pixel.y)))
+                        for lkp in person.rightHandParts: 
+                            self.l_hand_predictions.append((int(lkp.pixel.x), int(lkp.pixel.y)))
+                            # TODO: Maybe plot ordering? :) 
+                        # rospy.loginfo("Right hand predictions: {}" .format(self.r_hand_predictions))
+                        # rospy.loginfo("Left hand predictions: {}".format(self.l_hand_predictions))
+                
+        except Exception as e: 
+            rospy.logwarn("No hands were detected!")
         self.pcl        = pcl_msg
         self.pcl_recv   = True    
 
 
     def image_cb(self, msg): 
-
+        
+        self.ros_img = msg
         self.img        = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, -1)
         self.img_recv   = True
 
@@ -301,6 +320,15 @@ class HumanPose3D():
             msg.right_wrist     = Vector3(pos_named["r_wrist"][0], pos_named["r_wrist"][1], pos_named["r_wrist"][2])
             msg.success.data = True
             rospy.logdebug("Created ROS msg!")
+            debug_plot = True
+            if debug_plot:
+                pil_img = convert_ros_to_pil_img(self.ros_img)
+                img = plot_hand_keypoints(pil_img, self.r_hand_predictions)
+                img = plot_hand_keypoints(pil_img, self.l_hand_predictions)
+                ros_img = convert_pil_to_ros_img(img)
+                self.debug_plot.publish(ros_img)
+            convert_pil_to_ros_img()
+
         except Exception as e:
             msg.success.data = False 
             rospy.logwarn_throttle(2, "Create ROS msg failed: {}".format(e))

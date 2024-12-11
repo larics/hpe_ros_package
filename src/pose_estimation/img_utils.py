@@ -77,3 +77,45 @@ def bgr2rgb(img):
     rgb_img[:, :, 2] = img[:, :, 0]
         
     return rgb_img
+
+def plot_hand_keypoints(image=None, keypoints=None, save_path=None):
+    """
+    Plot hand keypoints on a given Pillow Image and label them with their index.
+
+    Args:
+        image (PIL.Image.Image): Input image. If None, a blank white canvas is created.
+        keypoints (list of tuples): List of (x, y) keypoints to plot.
+        save_path (str): Path to save the resulting image. If None, the image is not saved.
+
+    Returns:
+        PIL.Image.Image: The image with keypoints plotted.
+    """
+    # Validate inputs
+    if image is None:
+        # Create a blank white canvas if no image is provided
+        width, height = 500, 500
+        image = Image.new("RGB", (width, height), "white")
+    if keypoints is None:
+        raise ValueError("Keypoints list cannot be None.")
+
+    draw = ImageDraw.Draw(image)
+
+    # Load a font (optional, can use default)
+    try:
+        font = ImageFont.truetype("arial.ttf", size=16)  # Use a custom font if available
+    except IOError:
+        font = ImageFont.load_default()  # Fallback to default font
+
+    # Loop through the keypoints
+    for idx, (x, y) in enumerate(keypoints, start=1):
+        # Draw a circle at each keypoint
+        r = 6
+        draw.ellipse((x - r/2, y - r/2, x + r/2, y + r/2), fill="red")
+        # Draw the index number above the dot
+        draw.text((x, y - 10), str(idx), fill="green", font=font)
+
+    # Save the image if a save path is provided
+    if save_path:
+        image.save(save_path)
+
+    return image
