@@ -59,7 +59,6 @@ def convert_ros_to_pil_img(msg):
     except Exception as e:
         rospy.logerr("Error converting ROS image to PIL image: {}".format(e))
         return None
-      
 
 def get_text_dimensions(text_string, font):
 

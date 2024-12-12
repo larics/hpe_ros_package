@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-from hpe_ros_msgs.msg import HumanPose2D, HandPose2D, HumanPose3D, TorsoJointPositions
+from hpe_ros_msgs.msg import HumanPose2D, HandPose2D, HumanPose3D, HandPose3D, TorsoJointPositions
 from geometry_msgs.msg import Vector3, Point
 import numpy as np
 
@@ -21,6 +21,12 @@ def arrayToPoint(array, point):
     point.x = array[0]
     point.y = array[1]
     point.z = array[2]
+    return point
+
+def dictValByKeyToPoint(dict, key, point):
+    point.x = dict[key][0]
+    point.y = dict[key][1]
+    point.z = dict[key][2]
     return point
 
 
@@ -87,6 +93,8 @@ def packHumanPose2DMsg(now, keypoints):
     msg.r_ankle.x = keypoints[16][0]; msg.r_ankle.y = keypoints[16][1]
     return msg
 
+# TODO: Different annotations for different algorithms
+# SimpleBaselines vs OpenPose
 def packHumanPose3DMsg(now, keypoints):
     msg = HumanPose3D()
     msg.header.stamp = now
@@ -107,6 +115,29 @@ def packHumanPose3DMsg(now, keypoints):
     msg.r_knee      = arrayToPoint(keypoints[:, 14], msg.r_knee)
     msg.l_ankle     = arrayToPoint(keypoints[:, 15], msg.l_ankle)
     msg.r_ankle     = arrayToPoint(keypoints[:, 16], msg.r_ankle)
+    return msg
+
+def packOPHumanPose3DMsg(now, keypoints):
+    msg = HumanPose3D()
+    msg.header.stamp = now
+    msg.nose = dictValByKeyToPoint(keypoints, 'nose', msg.nose)
+    msg.neck = dictValByKeyToPoint(keypoints, 'neck', msg.neck)
+    msg.r_eye = dictValByKeyToPoint(keypoints, 'r_eye', msg.r_eye)
+    msg.l_eye = dictValByKeyToPoint(keypoints, 'l_eye', msg.l_eye)
+    msg.r_ear = dictValByKeyToPoint(keypoints, 'r_ear', msg.r_ear)
+    msg.l_ear = dictValByKeyToPoint(keypoints, 'l_ear', msg.l_ear)
+    msg.r_shoulder = dictValByKeyToPoint(keypoints, 'r_shoulder', msg.r_shoulder)
+    msg.l_shoulder = dictValByKeyToPoint(keypoints, 'l_shoulder', msg.l_shoulder)
+    msg.r_elbow = dictValByKeyToPoint(keypoints, 'r_elbow', msg.r_elbow)
+    msg.l_elbow = dictValByKeyToPoint(keypoints, 'l_elbow', msg.l_elbow)
+    msg.r_wrist = dictValByKeyToPoint(keypoints, 'r_wrist', msg.r_wrist)
+    msg.l_wrist = dictValByKeyToPoint(keypoints, 'l_wrist', msg.l_wrist)
+    msg.r_hip = dictValByKeyToPoint(keypoints, 'r_hip', msg.r_hip)
+    msg.l_hip = dictValByKeyToPoint(keypoints, 'l_hip', msg.l_hip)
+    msg.r_knee = dictValByKeyToPoint(keypoints, 'r_knee', msg.r_knee)
+    msg.l_knee = dictValByKeyToPoint(keypoints, 'l_knee', msg.l_knee)
+    msg.r_ankle = dictValByKeyToPoint(keypoints, 'r_ankle', msg.r_ankle)
+    msg.l_ankle = dictValByKeyToPoint(keypoints, 'l_ankle', msg.l_ankle)
     return msg
 
 def unpackHumanPose2DMsg(msg):
@@ -155,6 +186,32 @@ def packHandPose2DMsg(now, keypoints):
     msg.pinky1.x = keypoints[18][0]; msg.pinky1.y = keypoints[18][1]
     msg.pinky2.x = keypoints[19][0]; msg.pinky2.y = keypoints[19][1]
     msg.pinky3.x = keypoints[20][0]; msg.pinky3.y = keypoints[20][1]
+    return msg
+
+def packHandPose3DMsg(now, keypoints):
+    msg = HandPose3D()
+    msg.header.stamp = now
+    msg.wrist = arrayToPoint(keypoints[:, 0], msg.wrist)
+    msg.thumb0 = arrayToPoint(keypoints[:, 1], msg.thumb0)
+    msg.thumb1 = arrayToPoint(keypoints[:, 2], msg.thumb1)
+    msg.thumb2 = arrayToPoint(keypoints[:, 3], msg.thumb2)
+    msg.thumb3 = arrayToPoint(keypoints[:, 4], msg.thumb3)
+    msg.index0 = arrayToPoint(keypoints[:, 5], msg.index0)
+    msg.index1 = arrayToPoint(keypoints[:, 6], msg.index1)
+    msg.index2 = arrayToPoint(keypoints[:, 7], msg.index2)
+    msg.index3 = arrayToPoint(keypoints[:, 8], msg.index3)
+    msg.middle0 = arrayToPoint(keypoints[:, 9], msg.middle0)
+    msg.middle1 = arrayToPoint(keypoints[:, 10], msg.middle1)
+    msg.middle2 = arrayToPoint(keypoints[:, 11], msg.middle2)
+    msg.middle3 = arrayToPoint(keypoints[:, 12], msg.middle3)
+    msg.ring0 = arrayToPoint(keypoints[:, 13], msg.ring0)
+    msg.ring1 = arrayToPoint(keypoints[:, 14], msg.ring1)
+    msg.ring2 = arrayToPoint(keypoints[:, 15], msg.ring2)
+    msg.ring3 = arrayToPoint(keypoints[:, 16], msg.ring3)
+    msg.pinky0 = arrayToPoint(keypoints[:, 17], msg.pinky0)
+    msg.pinky1 = arrayToPoint(keypoints[:, 18], msg.pinky1)
+    msg.pinky2 = arrayToPoint(keypoints[:, 19], msg.pinky2)
+    msg.pinky3 = arrayToPoint(keypoints[:, 20], msg.pinky3)
     return msg
 
 def unpackHandPose2DMsg(msg):
