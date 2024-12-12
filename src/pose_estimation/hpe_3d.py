@@ -86,6 +86,7 @@ class HPE2Dto3D():
                               6:"r_shoulder", 7:"l_elbow", 8:"r_elbow", 9:"l_wrist", 10:"r_wrist", 
                               11:"l_hip", 12:"r_hip", 13:"l_knee", 14:"r_knee", 15:"l_ankle", 16:"r_ankle"}
 
+        # TODO: Maybe plot stuff to see how this is indexed
         self.body25_indexing = {0 :"nose", 1 :"neck", 2:  "r_shoulder", 3:  "r_elbow", 
                                 4: "r_wrist", 5: "l_shoulder", 6 : "l_elbow", 7:"l_wrist", 8: "midhip", 9: "r_hip",
                                 10: "r_knee", 11:"r_ankle", 12:"l_hip", 13: "l_knee", 14: "l_ankle", 15: "r_eye", 16: "l_eye", 
@@ -136,6 +137,8 @@ class HPE2Dto3D():
         self.right_wrist_pub    = rospy.Publisher("rightw_point", Vector3, queue_size=1)
         self.upper_body_3d_pub  = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
         self.hpe3d_pub          = rospy.Publisher("hpe3d", HumanPose3D, queue_size=1)
+        self.r_hand_pub         = rospy.Publisher("rhand3d", HandPose3D, queue_size=1)
+        self.l_hand_pub          = rospy.Publisher("lhand3d", HandPose3D, queue_size=1)
         rospy.loginfo("Initialized publishers!")
 
     def frame_pcl_cb(self, frame_msg, pcl_msg): 
@@ -152,14 +155,15 @@ class HPE2Dto3D():
                     for bodypart in person.bodyParts: 
                         self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
                         self.pose_predictions.append((bodypart.point.x, bodypart.point.y, bodypart.point.z))
-                        rospy.loginfo("Length of predictions: {}".format(len(self.predictions)))
             self.predictions = self.predictions[:18]
+            rospy.loginfo("Length of predictions: {}".format(len(self.predictions)))
             self.pred_recv = True
         try:
             if self.openpose and self.use_hands: 
                 for i, person in enumerate(persons): 
                     self.r_hand_predictions = []
                     self.l_hand_predictions = []
+                    # TODO: Do it just for the first person for now
                     if i == 0: 
                         for rkp in person.leftHandParts: 
                             self.r_hand_predictions.append((int(rkp.pixel.x), int(rkp.pixel.y)))
@@ -342,6 +346,7 @@ class HPE2Dto3D():
     def get_hand3d(self, preds): 
         coords = self.get_coordinates(self.pcl, preds, "xyz") 
         tfs, pos_named = self.create_keypoint_tfs(coords, self.hand_indexing)
+        rospy.loginfo("Positions: {}".format(pos_named))
         self.send_transforms(tfs)
         hand3d_msg = packHandPose3DMsg(rospy.Time.now(), pos_named)
         return hand3d_msg
@@ -351,40 +356,45 @@ class HPE2Dto3D():
         while not rospy.is_shutdown(): 
             
             run_ready = self.img_recv and self.cinfo_recv and self.pcl_recv and self.pred_recv
-            try:
-                if run_ready: 
-                    rospy.loginfo_throttle(30, "Publishing HPE3d!")
-                    # Maybe save indices for easier debugging
-                    start_time = rospy.Time.now().to_sec()
+            if run_ready: 
+                rospy.loginfo_throttle(30, "Publishing HPE3d!")
+                # Maybe save indices for easier debugging
+                start_time = rospy.Time.now().to_sec()
+                
+                try:
                     hpe3d_msg = self.get_hpe3d()
                     self.hpe3d_pub.publish(hpe3d_msg)
+                except Exception as e:
+                    rospy.logwarn("Failed to generate or publish HPE3d message: {}".format(e))
 
-                    self.use_hands = True
-                    if self.use_hands:
+                if self.use_hands:
+                    try:
                         lhand3d_msg = self.get_hand3d(self.l_hand_predictions)
                         rhand3d_msg = self.get_hand3d(self.r_hand_predictions)
                         self.lhand_pub.publish(lhand3d_msg)
                         self.rhand_pub.publish(rhand3d_msg)
-                    
-                    debug_plot = True
-                    if debug_plot:
-                        pil_img = convert_ros_to_pil_img(self.ros_img)
-                        img = plot_hand_keypoints(pil_img, self.r_hand_predictions)
-                        img = plot_hand_keypoints(pil_img, self.l_hand_predictions)
-                        ros_img = convert_pil_to_ros_img(img)
-                        self.debug_plot.publish(ros_img)
-                        convert_pil_to_ros_img()
+                    except Exception as e:
+                        rospy.logwarn("Failed to generate or publish Hand3d message: {}".format(e))
+                
+                debug_plot = False
+                if debug_plot:
+                    pil_img = convert_ros_to_pil_img(self.ros_img)
+                    img = plot_hand_keypoints(pil_img, self.r_hand_predictions)
+                    img = plot_hand_keypoints(pil_img, self.l_hand_predictions)
+                    ros_img = convert_pil_to_ros_img(img)
+                    self.debug_plot.publish(ros_img)
+                    convert_pil_to_ros_img()
 
-                    measure_runtime = True; 
-                    if measure_runtime:
-                        duration = rospy.Time.now().to_sec() - start_time
-                        rospy.loginfo("Run t: {}".format(duration)) 
+                measure_runtime = True; 
+                if measure_runtime:
+                    duration = rospy.Time.now().to_sec() - start_time
+                    rospy.loginfo("Run t: {}".format(duration)) 
 
-                    self.rate.sleep()
-                else: 
-                    self.debug_print()
-            except Exception as e: 
-                rospy.logwarn("Run failed: {}".format(e))
+            else: 
+                self.debug_print()
+
+
+            self.rate.sleep()
                 
 
 # Create Rotation matrices
