@@ -1,0 +1,8 @@
+<launch>
+
+<arg name="frequency" value="30"/>
+
+<!-- Transform HPE to CMD -->
+<node name="hpe_to_uav_node" pkg="hpe_ros_package" type="hpe_to_uav_cmd.py" args="$(arg frequency)" output="screen" />
+
+</launch>
