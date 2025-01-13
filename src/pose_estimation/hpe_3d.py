@@ -156,7 +156,7 @@ class HPE2Dto3D():
                     for bodypart in person.bodyParts: 
                         self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
                         self.pose_predictions.append((bodypart.point.x, bodypart.point.y, bodypart.point.z))
-            rospy.logdebug("len(predictions): {}".format(len(self.predictions)))
+            rospy.loginfo("len(predictions): {}".format(len(self.predictions)))
             self.pred_recv = True
         try:
             if self.openpose and self.use_hands: 
@@ -264,11 +264,14 @@ class HPE2Dto3D():
                 p = self.getP(p, x_rot, y_rot, z_rot, "xyz", "degrees") # TF from camera frame to the orientation human HAS!
                 kp_tf["{}".format(i)] = p
                 pos_named["{}".format(indexing[i])] = p
+            else: 
+                kp_tf["{}".format(i)] = (0, 0, 0)
+                pos_named["{}".format(indexing[i])] = (0, 0, 0)
 
         return kp_tf, pos_named
 
     def getP(self, p, angle_x_axis, angle_y_axis, angle_z_axis, order, format="radians"):
-
+        #TODO: This is disgusting! Change into ordinary matrix multiplication
         if format == "degrees": 
             angle_x_axis = np.radians(angle_x_axis)
             angle_y_axis = np.radians(angle_y_axis)
@@ -338,8 +341,10 @@ class HPE2Dto3D():
 
         return msg
     
-    def get_hpe3d(self, hpe_preds): 
-        coords = self.get_coordinates(self.pcl, hpe_preds, "xyz") 
+    def get_hpe3d(self, predictions): 
+        # Here we extract x_i, y_i from the PCL values (measured in m)
+        coords = self.get_coordinates(self.pcl, predictions, "xyz") 
+        # It would make sense to add maybe confidence or something like that :)
         tfs, pos_named = self.create_keypoint_tfs(coords, self.body25_indexing)
         self.send_transforms(tfs)
         hpe3d_msg = packOPHumanPose3DMsg(rospy.Time.now(), pos_named)
@@ -358,6 +363,27 @@ class HPE2Dto3D():
         self.send_transforms(tfs)
         hand3d_msg = packHandPose3DMsg(rospy.Time.now(), pos_named)
         return hand3d_msg
+    
+    def proc_hand_pose_est(self):
+        if self.use_hands:
+            try:
+                lhand3d_msg = self.get_hand3d(copy.deepcopy(self.l_hand_predictions))
+                self.lhand_pub.publish(lhand3d_msg)
+            except Exception as e:
+                rospy.logwarn("Failed to generate or publish left hand message: {}".format(e))
+            try: 
+                rhand3d_msg = self.get_hand3d(copy.deepcopy(self.r_hand_predictions))
+                self.rhand_pub.publish(rhand3d_msg)
+            except Exception as e:
+                rospy.logwarn("Failed to generate or publish right hand message: {}".format(e))
+
+    def proc_hpe_est(self):
+        try:
+            # TODO: Add comparison of the openpose estimation and the 3D pose estimation 
+            hpe3d_msg = self.get_hpe3d(copy.deepcopy(self.predictions))
+            self.hpe3d_pub.publish(hpe3d_msg)
+        except Exception as e:
+            rospy.logwarn("Failed to generate or publish HPE3d message: {}".format(e))
 
     def run(self): 
         cnt = 1; t_total = 0.0
@@ -368,26 +394,14 @@ class HPE2Dto3D():
                 rospy.loginfo_throttle(30, "Publishing 3D pose of the human!")
                 # Maybe save indices for easier debugging
                 t_s = rospy.Time.now().to_sec()
-                # TODO: Move to separate method
-                try:
-                    hpe3d_msg = self.get_hpe3d(copy.deepcopy(self.predictions))
-                    self.hpe3d_pub.publish(hpe3d_msg)
-                except Exception as e:
-                    rospy.logwarn("Failed to generate or publish HPE3d message: {}".format(e))
+                self.use_hpe = True
+                if self.use_hpe:
+                    self.proc_hpe_est()
 
                 self.use_hands = False
                 # TODO: Move to separate method
                 if self.use_hands:
-                    try:
-                        lhand3d_msg = self.get_hand3d(copy.deepcopy(self.l_hand_predictions))
-                        self.lhand_pub.publish(lhand3d_msg)
-                    except Exception as e:
-                        rospy.logwarn("Failed to generate or publish left hand message: {}".format(e))
-                    try: 
-                        rhand3d_msg = self.get_hand3d(copy.deepcopy(self.r_hand_predictions))
-                        self.rhand_pub.publish(rhand3d_msg)
-                    except Exception as e:
-                        rospy.logwarn("Failed to generate or publish right hand message: {}".format(e))
+                    self.process_hand_estimations()
                 
                 # TODO: Move to the separate method
                 debug_plot = False
@@ -409,15 +423,28 @@ class HPE2Dto3D():
                 
                 rospy.loginfo_throttle(1, f"Average loop duration is {t_avg}")
 
-                upper_body_msg = self.get_upper_body3d(copy.deepcopy(self.predictions))
-                self.upper_body_3d_pub.publish(upper_body_msg)
-                # TODO: Add better output for the user
-
+                # Removed for test publishing of the 3D pose of the upper body
+                # TODO: This used in Kalman filter for the upper body
+                # upper_body_msg = self.get_upper_body3d(copy.deepcopy(self.predictions))
+                # self.upper_body_3d_pub.publish(upper_body_msg)
+                
             else: 
                 self.debug_print()
 
-
             self.rate.sleep()
+
+    def process_hand_estimations(self):
+        if self.use_hands:
+            try:
+                lhand3d_msg = self.get_hand3d(copy.deepcopy(self.l_hand_predictions))
+                self.lhand_pub.publish(lhand3d_msg)
+            except Exception as e:
+                rospy.logwarn("Failed to generate or publish left hand message: {}".format(e))
+            try: 
+                rhand3d_msg = self.get_hand3d(copy.deepcopy(self.r_hand_predictions))
+                self.rhand_pub.publish(rhand3d_msg)
+            except Exception as e:
+                rospy.logwarn("Failed to generate or publish right hand message: {}".format(e))
                 
 
 # Create Rotation matrices
