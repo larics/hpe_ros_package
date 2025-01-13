@@ -4,7 +4,6 @@
 <arg name="openpose" default="true"/>
 <arg name="kalman" default="false"/>
 
-
 <!-- Depth extraction node --> <!-- maybe not neccessary if using OpenPose -->
 <node name="depth_extraction_node" ns="hpe3d" pkg="hpe_ros_package" type="hpe_3d.py" args="$(arg frequency) $(arg openpose)" output="screen" />
 

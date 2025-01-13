@@ -27,7 +27,6 @@ import sensor_msgs.point_cloud2 as pc2
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
 # - add painting of a z measurements  
 # - Record bag of l shoulder, r shoulder and rest of the body parts 
-# - 
 
 class HPE2Dto3D(): 
 
@@ -114,9 +113,9 @@ class HPE2Dto3D():
 
     def _init_subscribers(self):
 
-        self.camera_sub = rospy.Subscriber("camera/color/image_raw", Image, self.image_cb, queue_size=1)
-        self.depth_sub = rospy.Subscriber("camera/depth_registered/points", PointCloud2, self.pcl_cb, queue_size=1)
-        self.depth_cinfo_sub    = rospy.Subscriber("camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
+        self.camera_sub = rospy.Subscriber("/camera/color/image_raw", Image, self.image_cb, queue_size=1)
+        self.depth_sub = rospy.Subscriber("/camera/depth_registered/points", PointCloud2, self.pcl_cb, queue_size=1)
+        self.depth_cinfo_sub    = rospy.Subscriber("/camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
        
         if self.openpose: 
             #self.predictions_sub    = rospy.Subscriber("/frame", Frame, self.pred_cb, queue_size=1)
@@ -234,8 +233,8 @@ class HPE2Dto3D():
             # Create dict with axis as key and list of values that represent coord of each keypoint
             ret["{}".format(i)] = [val for val in generator_depths]
         return ret
-
-    # It is for human body for now only and for statics TFs, which is wrong :) 
+    
+    # It is for human body for now only and for static TFs, which is wrong :) 
     def create_keypoint_tfs(self, coords, indexing): 
 
         cond = "x" in coords.keys() and "y" in coords.keys() and "z" in coords.keys()        
@@ -288,7 +287,7 @@ class HPE2Dto3D():
         return (p[0], p[1], p[2])
 
     def send_transforms(self, tfs):
-
+        # TODO: move this to markers 
         for index, tf in tfs.items():
             
             x,y,z = tf[0], tf[1], tf[2]
@@ -433,19 +432,6 @@ class HPE2Dto3D():
 
             self.rate.sleep()
 
-    def process_hand_estimations(self):
-        if self.use_hands:
-            try:
-                lhand3d_msg = self.get_hand3d(copy.deepcopy(self.l_hand_predictions))
-                self.lhand_pub.publish(lhand3d_msg)
-            except Exception as e:
-                rospy.logwarn("Failed to generate or publish left hand message: {}".format(e))
-            try: 
-                rhand3d_msg = self.get_hand3d(copy.deepcopy(self.r_hand_predictions))
-                self.rhand_pub.publish(rhand3d_msg)
-            except Exception as e:
-                rospy.logwarn("Failed to generate or publish right hand message: {}".format(e))
-                
 
 # Create Rotation matrices
 def get_RotX(angle): # 
