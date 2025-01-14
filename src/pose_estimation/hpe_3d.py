@@ -18,6 +18,7 @@ from std_msgs.msg import Float64MultiArray
 from geometry_msgs.msg import Vector3
 from hpe_ros_msgs.msg import TorsoJointPositions, HumanPose2D, HandPose2D, HumanPose3D, HandPose3D
 from ros_openpose_msgs.msg import Frame
+from visualization_msgs.msg import MarkerArray, Marker
 
 import message_filters
 
@@ -27,6 +28,7 @@ import sensor_msgs.point_cloud2 as pc2
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
 # - add painting of a z measurements  
 # - Record bag of l shoulder, r shoulder and rest of the body parts 
+# - Compare results 
 
 class HPE2Dto3D(): 
 
@@ -49,9 +51,9 @@ class HPE2Dto3D():
         #  X -----> x
         #  x goes right, y points down and z points from the camera viewpoint
 
-        self.init_x_rot = -90 - 40 # - 30 due to pitch
+        self.init_x_rot = 0 #-90 - 40 # - 30 due to pitch
         self.init_y_rot = 0
-        self.init_z_rot = -90
+        self.init_z_rot = 0 #
 
         # IF openpose: True, ELSE: False
         self.openpose = openpose
@@ -139,6 +141,7 @@ class HPE2Dto3D():
         self.hpe3d_pub          = rospy.Publisher("hpe3d", HumanPose3D, queue_size=1)
         self.rhand_pub         = rospy.Publisher("rhand3d", HandPose3D, queue_size=1)
         self.lhand_pub          = rospy.Publisher("lhand3d", HandPose3D, queue_size=1)
+        self.camera_est_pub = rospy.Publisher("camera_estimation", MarkerArray, queue_size=1)
         rospy.loginfo("Initialized publishers!")
 
     def frame_pcl_cb(self, frame_msg, pcl_msg): 
@@ -155,7 +158,6 @@ class HPE2Dto3D():
                     for bodypart in person.bodyParts: 
                         self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
                         self.pose_predictions.append((bodypart.point.x, bodypart.point.y, bodypart.point.z))
-            rospy.loginfo("len(predictions): {}".format(len(self.predictions)))
             self.pred_recv = True
         try:
             if self.openpose and self.use_hands: 
@@ -340,12 +342,13 @@ class HPE2Dto3D():
 
         return msg
     
-    def get_hpe3d(self, predictions): 
+    def get_hpe3d(self, predictions, publish_tfs=False): 
         # Here we extract x_i, y_i from the PCL values (measured in m)
         coords = self.get_coordinates(self.pcl, predictions, "xyz") 
         # It would make sense to add maybe confidence or something like that :)
         tfs, pos_named = self.create_keypoint_tfs(coords, self.body25_indexing)
-        self.send_transforms(tfs)
+        if publish_tfs:
+            self.send_transforms(tfs)
         hpe3d_msg = packOPHumanPose3DMsg(rospy.Time.now(), pos_named)
         return hpe3d_msg
     
@@ -381,8 +384,68 @@ class HPE2Dto3D():
             # TODO: Add comparison of the openpose estimation and the 3D pose estimation 
             hpe3d_msg = self.get_hpe3d(copy.deepcopy(self.predictions))
             self.hpe3d_pub.publish(hpe3d_msg)
+
+            # TODO: Get torso coordinate frame 
+            c_d_ls = pointToArray(hpe3d_msg.l_shoulder)
+            c_d_rs = pointToArray(hpe3d_msg.r_shoulder)
+            c_d_t  = pointToArray(hpe3d_msg.neck)
+            c_d_n  = pointToArray(hpe3d_msg.nose)
+            c_d_le = pointToArray(hpe3d_msg.l_elbow)
+            c_d_re = pointToArray(hpe3d_msg.r_elbow)
+            c_d_rw = pointToArray(hpe3d_msg.r_wrist)
+            c_d_lw = pointToArray(hpe3d_msg.l_wrist)
+
+            cD = np.array([create_homogenous_vector(c_d_ls), 
+                           create_homogenous_vector(c_d_rs), 
+                           create_homogenous_vector(c_d_le), 
+                           create_homogenous_vector(c_d_re), 
+                           create_homogenous_vector(c_d_lw), 
+                           create_homogenous_vector(c_d_rw)])
+
+
+            # body in the camera coordinate frame 
+            bRc = np.matmul(get_RotX(np.pi/2), get_RotY(np.pi/2))
+            # thorax in the camera frame --> TODO: Fix transformations
+            T = create_homogenous_matrix(bRc.T, -c_d_t)
+
+            bD = np.matmul(T, cD.T).T
+            self.publishMarkerArray(bD)             
+
         except Exception as e:
             rospy.logwarn("Failed to generate or publish HPE3d message: {}".format(e))
+
+    def publishMarkerArray(self, bD):
+        mA = MarkerArray()
+        i = 0
+        for v in bD:
+            m_ = self.createMarker(v, i)
+            i+=1 
+            mA.markers.append(m_)
+        print("len markers", len(mA.markers))
+        self.camera_est_pub.publish(mA)
+
+    def createMarker(self, v, i):
+        m_ = Marker()
+        m_.header.frame_id = "camera_color_frame"
+        m_.header.stamp = rospy.Time.now()
+        m_.type = m_.SPHERE
+        m_.id = i
+        m_.action = m_.ADD
+        m_.scale.x = 0.1
+        m_.scale.y = 0.1
+        m_.scale.z = 0.1
+        m_.color.a = 1.0
+        m_.color.r = 0.0
+        m_.color.g = 1.0
+        m_.color.b = 0.0
+        m_.pose.position.x = v[0]
+        m_.pose.position.y = v[1]
+        m_.pose.position.z = v[2]
+        m_.pose.orientation.x = 0
+        m_.pose.orientation.y = 0
+        m_.pose.orientation.z = 0
+        m_.pose.orientation.w = 1
+        return m_
 
     def run(self): 
         cnt = 1; t_total = 0.0
@@ -433,7 +496,15 @@ class HPE2Dto3D():
             self.rate.sleep()
 
 
-# Create Rotation matrices
+def create_homogenous_vector(v): 
+    return np.array([v[0], v[1], v[2], 1])
+
+# Create Rotation 
+def create_homogenous_matrix(R, t):
+    T = np.hstack((R, t.reshape(3, 1)))
+    T = np.vstack((T, np.array([0, 0, 0, 1])))
+    return T
+
 def get_RotX(angle): # 
     
     RX = np.array([[1, 0, 0], 
@@ -455,6 +526,8 @@ def get_RotZ(angle):
                    [ 0, 0, 1]] )
     return RZ
 
+def pointToArray(msg): 
+    return np.array([msg.x, msg.y, msg.z])
 
 
 if __name__ == "__main__": 
