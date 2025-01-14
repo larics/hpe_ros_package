@@ -247,15 +247,7 @@ class HPE2Dto3D():
         for i, (x, y, z) in enumerate(zip(coords["x"], coords["y"], coords["z"])): 
             nan_cond =  not np.isnan(x) and not np.isnan(y) and not np.isnan(z)
             if nan_cond: 
-                
-                # OLD P 
-                #p = np.array([z[0], y[0], x[0]]) # Swapped z, y, x to hit correct dimension
-                #R = get_RotX(-np.pi/2)  # Needs to be rotated for 90 deg around X axis
-                #rotP = np.matmul(R, p)
-                #kp_tf["{}".format(i)] = (rotP[0], -rotP[1], rotP[2]) # Y is in wrong direction therefore -rotP
-                #pos_named["{}".format(self.indexing[i])] = (rotP[0], -rotP[1], rotP[2])
-
-                # NEW P CALC
+               # NEW P CALC
                 p = np.array([x[0], y[0], z[0]]) 
 
                 x_rot = self.init_x_rot
@@ -385,7 +377,8 @@ class HPE2Dto3D():
             hpe3d_msg = self.get_hpe3d(copy.deepcopy(self.predictions))
             self.hpe3d_pub.publish(hpe3d_msg)
 
-            # TODO: Get torso coordinate frame 
+            # TODO: Get torso coordinate frame [move this to a method]
+            # TODO: Compare this to the online estimation of the HPE by openpose
             c_d_ls = pointToArray(hpe3d_msg.l_shoulder)
             c_d_rs = pointToArray(hpe3d_msg.r_shoulder)
             c_d_t  = pointToArray(hpe3d_msg.neck)
@@ -395,33 +388,50 @@ class HPE2Dto3D():
             c_d_rw = pointToArray(hpe3d_msg.r_wrist)
             c_d_lw = pointToArray(hpe3d_msg.l_wrist)
 
-            cD = np.array([create_homogenous_vector(c_d_ls), 
+            cD = np.array([create_homogenous_vector(c_d_t),
+                           create_homogenous_vector(c_d_ls), 
                            create_homogenous_vector(c_d_rs), 
                            create_homogenous_vector(c_d_le), 
                            create_homogenous_vector(c_d_re), 
                            create_homogenous_vector(c_d_lw), 
                            create_homogenous_vector(c_d_rw)])
 
-
             # body in the camera coordinate frame 
             bRc = np.matmul(get_RotX(np.pi/2), get_RotY(np.pi/2))
             # thorax in the camera frame --> TODO: Fix transformations
-            T = create_homogenous_matrix(bRc.T, -c_d_t)
-
-            bD = np.matmul(T, cD.T).T
+            T = create_homogenous_matrix(bRc.T, c_d_t)
+            T_inv = np.linalg.inv(T)
+            # This seems like ok transformation for beginning :) 
+            bD = np.matmul(T_inv, cD.T).T
             self.publishMarkerArray(bD)             
 
+            torso_msg = self.packSimpleTorso3DMsg(bD)
+            self.upper_body_3d_pub.publish(torso_msg)
         except Exception as e:
             rospy.logwarn("Failed to generate or publish HPE3d message: {}".format(e))
+
+    def packSimpleTorso3DMsg(self, bD):
+        msg = TorsoJointPositions()
+        msg.header = self.pcl.header
+        msg.frame_id.data = "camera_color_frame"
+        msg.thorax = Vector3(bD.T[0, 0], bD.T[1,0], bD.T[2,0])
+        msg.left_shoulder = Vector3(bD.T[0, 1], bD.T[1,1], bD.T[2,1])
+        msg.right_shoulder = Vector3(bD.T[0, 2], bD.T[1,2], bD.T[2,2])
+        msg.left_elbow = Vector3(bD.T[0, 3], bD.T[1,3], bD.T[2,3])
+        msg.right_elbow = Vector3(bD.T[0, 4], bD.T[1,4], bD.T[2,4])
+        msg.left_wrist = Vector3(bD.T[0, 5], bD.T[1,5], bD.T[2,5])
+        msg.right_wrist = Vector3(bD.T[0, 6], bD.T[1,6], bD.T[2,6])
+        msg.success.data = True
+        return msg
 
     def publishMarkerArray(self, bD):
         mA = MarkerArray()
         i = 0
+        names = ["ls", "rs", "le", "re", "lw", "rw"]
         for v in bD:
             m_ = self.createMarker(v, i)
             i+=1 
             mA.markers.append(m_)
-        print("len markers", len(mA.markers))
         self.camera_est_pub.publish(mA)
 
     def createMarker(self, v, i):
@@ -484,12 +494,6 @@ class HPE2Dto3D():
                     t_avg = t_total/cnt
                 
                 rospy.loginfo_throttle(1, f"Average loop duration is {t_avg}")
-
-                # Removed for test publishing of the 3D pose of the upper body
-                # TODO: This used in Kalman filter for the upper body
-                # upper_body_msg = self.get_upper_body3d(copy.deepcopy(self.predictions))
-                # self.upper_body_3d_pub.publish(upper_body_msg)
-                
             else: 
                 self.debug_print()
 
