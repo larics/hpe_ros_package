@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-from hpe_ros_msgs.msg import HumanPose2D, HandPose2D, HumanPose3D, TorsoJointPositions
+from hpe_ros_msgs.msg import HumanPose2D, HandPose2D, HumanPose3D, HandPose3D, TorsoJointPositions
 from geometry_msgs.msg import Vector3, Point
 import numpy as np
 
@@ -23,6 +23,14 @@ def arrayToPoint(array, point):
     point.z = array[2]
     return point
 
+def pointToArray(msg): 
+    return np.array([msg.x, msg.y, msg.z])
+
+def dictValByKeyToPoint(dict, key, point):
+    point.x = dict[key][0]
+    point.y = dict[key][1]
+    point.z = dict[key][2]
+    return point
 
 # Create Rotation matrices
 def get_RotX(angle):  
@@ -87,6 +95,8 @@ def packHumanPose2DMsg(now, keypoints):
     msg.r_ankle.x = keypoints[16][0]; msg.r_ankle.y = keypoints[16][1]
     return msg
 
+# TODO: Different annotations for different algorithms
+# SimpleBaselines vs OpenPose
 def packHumanPose3DMsg(now, keypoints):
     msg = HumanPose3D()
     msg.header.stamp = now
@@ -107,6 +117,30 @@ def packHumanPose3DMsg(now, keypoints):
     msg.r_knee      = arrayToPoint(keypoints[:, 14], msg.r_knee)
     msg.l_ankle     = arrayToPoint(keypoints[:, 15], msg.l_ankle)
     msg.r_ankle     = arrayToPoint(keypoints[:, 16], msg.r_ankle)
+    return msg
+
+
+def packOPHumanPose3DMsg(now, keypoints):
+    msg = HumanPose3D()
+    msg.header.stamp = now
+    msg.nose = dictValByKeyToPoint(keypoints, 'nose', msg.nose)
+    msg.neck = dictValByKeyToPoint(keypoints, 'neck', msg.neck)
+    msg.r_eye = dictValByKeyToPoint(keypoints, 'r_eye', msg.r_eye)
+    msg.l_eye = dictValByKeyToPoint(keypoints, 'l_eye', msg.l_eye)
+    msg.r_ear = dictValByKeyToPoint(keypoints, 'r_ear', msg.r_ear)
+    msg.l_ear = dictValByKeyToPoint(keypoints, 'l_ear', msg.l_ear)
+    msg.r_shoulder = dictValByKeyToPoint(keypoints, 'r_shoulder', msg.r_shoulder)
+    msg.l_shoulder = dictValByKeyToPoint(keypoints, 'l_shoulder', msg.l_shoulder)
+    msg.r_elbow = dictValByKeyToPoint(keypoints, 'r_elbow', msg.r_elbow)
+    msg.l_elbow = dictValByKeyToPoint(keypoints, 'l_elbow', msg.l_elbow)
+    msg.r_wrist = dictValByKeyToPoint(keypoints, 'r_wrist', msg.r_wrist)
+    msg.l_wrist = dictValByKeyToPoint(keypoints, 'l_wrist', msg.l_wrist)
+    msg.r_hip = dictValByKeyToPoint(keypoints, 'r_hip', msg.r_hip)
+    msg.l_hip = dictValByKeyToPoint(keypoints, 'l_hip', msg.l_hip)
+    msg.r_knee = dictValByKeyToPoint(keypoints, 'r_knee', msg.r_knee)
+    msg.l_knee = dictValByKeyToPoint(keypoints, 'l_knee', msg.l_knee)
+    msg.r_ankle = dictValByKeyToPoint(keypoints, 'r_ankle', msg.r_ankle)
+    msg.l_ankle = dictValByKeyToPoint(keypoints, 'l_ankle', msg.l_ankle)
     return msg
 
 def unpackHumanPose2DMsg(msg):
@@ -155,6 +189,32 @@ def packHandPose2DMsg(now, keypoints):
     msg.pinky1.x = keypoints[18][0]; msg.pinky1.y = keypoints[18][1]
     msg.pinky2.x = keypoints[19][0]; msg.pinky2.y = keypoints[19][1]
     msg.pinky3.x = keypoints[20][0]; msg.pinky3.y = keypoints[20][1]
+    return msg
+
+def packHandPose3DMsg(now, keypoints):
+    msg = HandPose3D()
+    msg.header.stamp = now
+    msg.wrist = dictValByKeyToPoint(keypoints, 'wrist', msg.wrist)
+    msg.thumb0 = dictValByKeyToPoint(keypoints, 'thumb0', msg.thumb0)
+    msg.thumb1 = dictValByKeyToPoint(keypoints, 'thumb1', msg.thumb1)
+    msg.thumb2 = dictValByKeyToPoint(keypoints, 'thumb2', msg.thumb2)
+    msg.thumb3 = dictValByKeyToPoint(keypoints, 'thumb3', msg.thumb3)
+    msg.index0 = dictValByKeyToPoint(keypoints, 'index0', msg.index0)
+    msg.index1 = dictValByKeyToPoint(keypoints, 'index1', msg.index1)
+    msg.index2 = dictValByKeyToPoint(keypoints, 'index2', msg.index2)
+    msg.index3 = dictValByKeyToPoint(keypoints, 'index3', msg.index3)
+    msg.middle0 = dictValByKeyToPoint(keypoints, 'middle0', msg.middle0)
+    msg.middle1 = dictValByKeyToPoint(keypoints, 'middle1', msg.middle1)
+    msg.middle2 = dictValByKeyToPoint(keypoints, 'middle2', msg.middle2)
+    msg.middle3 = dictValByKeyToPoint(keypoints, 'middle3', msg.middle3)
+    msg.ring0 = dictValByKeyToPoint(keypoints, 'ring0', msg.ring0)
+    msg.ring1 = dictValByKeyToPoint(keypoints, 'ring1', msg.ring1)
+    msg.ring2 = dictValByKeyToPoint(keypoints, 'ring2', msg.ring2)
+    msg.ring3 = dictValByKeyToPoint(keypoints, 'ring3', msg.ring3)
+    msg.pinky0 = dictValByKeyToPoint(keypoints, 'pinky0', msg.pinky0)
+    msg.pinky1 = dictValByKeyToPoint(keypoints, 'pinky1', msg.pinky1)
+    msg.pinky2 = dictValByKeyToPoint(keypoints, 'pinky2', msg.pinky2)
+    msg.pinky3 = dictValByKeyToPoint(keypoints, 'pinky3', msg.pinky3)
     return msg
 
 def unpackHandPose2DMsg(msg):

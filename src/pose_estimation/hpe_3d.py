@@ -1,21 +1,24 @@
-#!/usr/bin/python2
+#!/usr/bin/python3
 
 import os
 import sys
 
+import copy
 import rospy
 import tf
 import numpy as np
 
 from PIL import ImageDraw, ImageFont
 from PIL import Image as PILImage
-from img_utils import convert_pil_to_ros_img
+from img_utils import convert_pil_to_ros_img, convert_ros_to_pil_img, plot_hand_keypoints
+from utils import *
 
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from std_msgs.msg import Float64MultiArray
 from geometry_msgs.msg import Vector3
-from hpe_ros_msgs.msg import TorsoJointPositions
+from hpe_ros_msgs.msg import TorsoJointPositions, HumanPose2D, HandPose2D, HumanPose3D, HandPose3D
 from ros_openpose_msgs.msg import Frame
+from visualization_msgs.msg import MarkerArray, Marker
 
 import message_filters
 
@@ -25,9 +28,9 @@ import sensor_msgs.point_cloud2 as pc2
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
 # - add painting of a z measurements  
 # - Record bag of l shoulder, r shoulder and rest of the body parts 
-# - 
+# - Compare results 
 
-class HumanPose3D(): 
+class HPE2Dto3D(): 
 
     def __init__(self, freq, openpose):
         
@@ -48,12 +51,17 @@ class HumanPose3D():
         #  X -----> x
         #  x goes right, y points down and z points from the camera viewpoint
 
-        self.init_x_rot = -90 - 40 # - 30 due to pitch
+        self.init_x_rot = 0 #-90 - 40 # - 30 due to pitch
         self.init_y_rot = 0
-        self.init_z_rot = -90
+        self.init_z_rot = 0 #
 
         # IF openpose: True, ELSE: False
         self.openpose = openpose
+        
+        # If use hands, parse them from frame 
+        # use hands could be part of the tmuxinator config? 
+        self.use_hands = True
+        self.r_hand_predictions, self.l_hand_predictions = [], []
 
         if self.openpose: 
             self.body25 = True
@@ -70,6 +78,8 @@ class HumanPose3D():
 
         # TODO: Add TRT indexing
         # MPII keypoint indexing
+        # TODO: Move this indexing to the yaml file 
+        # TODO: Add indexing for the hands
         self.mpii_indexing = {0:"r_ankle", 1:"r_knee", 2:"r_hip", 3:"l_hip", 4: "l_knee", 5: "l_ankle",
                               6:"pelvis", 7:"thorax", 8:"upper_neck", 9:"head_top", 10:"r_wrist",
                               11:"r_elbow", 12:"r_shoulder", 13:"l_shoulder", 14:"l_elbow", 15:"l_wrist"}
@@ -78,11 +88,18 @@ class HumanPose3D():
                               6:"r_shoulder", 7:"l_elbow", 8:"r_elbow", 9:"l_wrist", 10:"r_wrist", 
                               11:"l_hip", 12:"r_hip", 13:"l_knee", 14:"r_knee", 15:"l_ankle", 16:"r_ankle"}
 
+        # TODO: Maybe plot stuff to see how this is indexed
         self.body25_indexing = {0 :"nose", 1 :"neck", 2:  "r_shoulder", 3:  "r_elbow", 
                                 4: "r_wrist", 5: "l_shoulder", 6 : "l_elbow", 7:"l_wrist", 8: "midhip", 9: "r_hip",
                                 10: "r_knee", 11:"r_ankle", 12:"l_hip", 13: "l_knee", 14: "l_ankle", 15: "r_eye", 16: "l_eye", 
                                 17: "r_ear", 18:"l_ear", 19:"l_big_toe", 20:"l_small_toe", 21: "l_heel", 22: "r_big_toe",
                                 23: "r_small_toe", 24: "r_heel", 25: "background"}
+        
+        self.hand_indexing = {0: "wrist", 1: "thumb0", 2: "thumb1", 3: "thumb2", 4: "thumb3",
+                              5: "index0", 6: "index1", 7: "index2", 8: "index3",
+                              9: "middle0", 10: "middle1", 11: "middle2", 12: "middle3",
+                              13: "ring0", 14: "ring1", 15: "ring2", 16: "ring3",
+                              17: "pinky0", 18: "pinky1", 19: "pinky2", 20: "pinky3"}
         
         # self.indexing = different indexing depending on weights that are used!
         if self.mpii: self.indexing = self.mpii_indexing
@@ -98,19 +115,18 @@ class HumanPose3D():
 
     def _init_subscribers(self):
 
-        self.camera_sub = rospy.Subscriber("camera/color/image_raw", Image, self.image_cb, queue_size=1)
-        self.depth_sub = rospy.Subscriber("camera/depth_registered/points", PointCloud2, self.pcl_cb, queue_size=1)
-        self.depth_cinfo_sub    = rospy.Subscriber("camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
+        self.camera_sub = rospy.Subscriber("/camera/color/image_raw", Image, self.image_cb, queue_size=1)
+        self.depth_sub = rospy.Subscriber("/camera/depth_registered/points", PointCloud2, self.pcl_cb, queue_size=1)
+        self.depth_cinfo_sub    = rospy.Subscriber("/camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
        
         if self.openpose: 
             #self.predictions_sub    = rospy.Subscriber("/frame", Frame, self.pred_cb, queue_size=1)
             self.predictions_sub    = message_filters.Subscriber("/frame", Frame)
-            self.predictions_sub    = message_filters.Subscriber("/hpe_2d", Frame)
-            self.depth_sub          = message_filters.Subscriber("camera/depth_registered/points", PointCloud2)
+            #self.predictions_sub    = message_filters.Subscriber("/hpe_2d", Frame)
+            self.depth_sub          = message_filters.Subscriber("/camera/depth/color/points", PointCloud2)
             # Doesn't matter! 
             self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 10)
             self.ats.registerCallback(self.frame_pcl_cb)
-
 
         else: 
             self.predictions_sub    = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
@@ -118,36 +134,57 @@ class HumanPose3D():
         rospy.loginfo("Initialized subscribers!")
 
     def _init_publishers(self): 
+        self.debug_plot         = rospy.Publisher("debug_plot", Image, queue_size=1)
         self.left_wrist_pub     = rospy.Publisher("leftw_point", Vector3, queue_size=1)
         self.right_wrist_pub    = rospy.Publisher("rightw_point", Vector3, queue_size=1)
         self.upper_body_3d_pub  = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
+        self.rgbd_hpe3d_pub     = rospy.Publisher("rgbd_hpe3d", HumanPose3D, queue_size=1)
+        self.openpose_hpe3d_pub = rospy.Publisher("openpose_hpe3d", HumanPose3D, queue_size=1)
+        self.rhand_pub          = rospy.Publisher("rhand3d", HandPose3D, queue_size=1)
+        self.lhand_pub          = rospy.Publisher("lhand3d", HandPose3D, queue_size=1)
+        self.camera_est_pub = rospy.Publisher("camera_estimation", MarkerArray, queue_size=1)
         rospy.loginfo("Initialized publishers!")
 
-
     def frame_pcl_cb(self, frame_msg, pcl_msg): 
-
-        #keypoints = msg.data
-        rospy.loginfo("Received frame and pcl!")
+        # Used if OpenPose Sync is used 
+        rospy.logdebug("Received frame and pcl!")
         persons = frame_msg.persons
         self.predictions = []
         self.pose_predictions = []
 
+        # TODO: Add HumanPose2D and HumanHand2D to publish if necessary
         if self.openpose:
             for i, person in enumerate(persons): 
                 if i == 0: 
                     for bodypart in person.bodyParts: 
                         self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
                         self.pose_predictions.append((bodypart.point.x, bodypart.point.y, bodypart.point.z))
-            
-            self.predictions = self.predictions[:18]
             self.pred_recv = True
-
+        try:
+            if self.openpose and self.use_hands: 
+                for i, person in enumerate(persons): 
+                    self.r_hand_predictions = []
+                    self.l_hand_predictions = []
+                    # TODO: Do it just for the first person for now
+                    if i == 0: 
+                        # Here is where problem arises, because sometimes openpose doesn't detect all fingers
+                        # TODO: How are defined leftHandParts 
+                        for rkp in person.leftHandParts: 
+                            self.r_hand_predictions.append((int(rkp.pixel.x), int(rkp.pixel.y)))
+                        for lkp in person.rightHandParts: 
+                            self.l_hand_predictions.append((int(lkp.pixel.x), int(lkp.pixel.y)))
+                            # TODO: Maybe plot ordering? :) 
+                        # rospy.loginfo("Right hand predictions: {}" .format(self.r_hand_predictions))
+                        # rospy.loginfo("Left hand predictions: {}".format(self.l_hand_predictions))
+                
+        except Exception as e: 
+            rospy.logwarn("No hands were detected!")
         self.pcl        = pcl_msg
         self.pcl_recv   = True    
 
-
     def image_cb(self, msg): 
-
+        
+        self.ros_img = msg
         self.img        = np.frombuffer(msg.data, dtype=np.uint8).reshape(msg.height, msg.width, -1)
         self.img_recv   = True
 
@@ -170,7 +207,7 @@ class HumanPose3D():
                         self.predictions.append((int(bodypart.pixel.x), int(bodypart.pixel.y)))
                         self.pose_predictions.append((bodypart.point.x, bodypart.point.y, bodypart.point.z))
             
-            self.predictions = self.predictions[:18]
+            #self.predictions = self.predictions[:18]
             self.pred_recv = True
         else: 
             # pair elements
@@ -182,7 +219,6 @@ class HumanPose3D():
     def cinfo_cb(self, msg): 
 
         self.cinfo_recv = True
-
 
     def get_depths(self, pcl, indices, axis="z"):
 
@@ -200,8 +236,9 @@ class HumanPose3D():
             # Create dict with axis as key and list of values that represent coord of each keypoint
             ret["{}".format(i)] = [val for val in generator_depths]
         return ret
-
-    def create_keypoint_tfs(self, coords): 
+    
+    # It is for human body for now only and for static TFs, which is wrong :) 
+    def create_keypoint_tfs(self, coords, indexing): 
 
         cond = "x" in coords.keys() and "y" in coords.keys() and "z" in coords.keys()        
         assert(cond), "Not enough coordinates returned to create TF"
@@ -211,15 +248,7 @@ class HumanPose3D():
         for i, (x, y, z) in enumerate(zip(coords["x"], coords["y"], coords["z"])): 
             nan_cond =  not np.isnan(x) and not np.isnan(y) and not np.isnan(z)
             if nan_cond: 
-                
-                # OLD P 
-                #p = np.array([z[0], y[0], x[0]]) # Swapped z, y, x to hit correct dimension
-                #R = get_RotX(-np.pi/2)  # Needs to be rotated for 90 deg around X axis
-                #rotP = np.matmul(R, p)
-                #kp_tf["{}".format(i)] = (rotP[0], -rotP[1], rotP[2]) # Y is in wrong direction therefore -rotP
-                #pos_named["{}".format(self.indexing[i])] = (rotP[0], -rotP[1], rotP[2])
-
-                # NEW P CALC
+               # NEW P CALC
                 p = np.array([x[0], y[0], z[0]]) 
 
                 x_rot = self.init_x_rot
@@ -228,15 +257,15 @@ class HumanPose3D():
 
                 p = self.getP(p, x_rot, y_rot, z_rot, "xyz", "degrees") # TF from camera frame to the orientation human HAS!
                 kp_tf["{}".format(i)] = p
-                pos_named["{}".format(self.indexing[i])] = p
-
-
-
+                pos_named["{}".format(indexing[i])] = p
+            else: 
+                kp_tf["{}".format(i)] = (0, 0, 0)
+                pos_named["{}".format(indexing[i])] = (0, 0, 0)
 
         return kp_tf, pos_named
 
     def getP(self, p, angle_x_axis, angle_y_axis, angle_z_axis, order, format="radians"):
-
+        #TODO: This is disgusting! Change into ordinary matrix multiplication
         if format == "degrees": 
             angle_x_axis = np.radians(angle_x_axis)
             angle_y_axis = np.radians(angle_y_axis)
@@ -252,9 +281,8 @@ class HumanPose3D():
         
         return (p[0], p[1], p[2])
 
-
     def send_transforms(self, tfs):
-
+        # TODO: move this to markers 
         for index, tf in tfs.items():
             
             x,y,z = tf[0], tf[1], tf[2]
@@ -278,9 +306,8 @@ class HumanPose3D():
         if not self.pred_recv: 
             rospy.logwarn_throttle(1, "Prediction is not recieved! Check topic names, camera type and model initialization!")
 
-    def create_ROSmsg(self, pos_named): 
-
-
+    def packTorso3DMsg(self, pos_named): 
+        # TODO: Pack this into packTorsoPoseMsg method
         msg = TorsoJointPositions()
         msg.header          = self.pcl.header
         msg.frame_id.data        = "camera_color_frame"
@@ -300,57 +327,175 @@ class HumanPose3D():
             msg.left_wrist      = Vector3(pos_named["l_wrist"][0], pos_named["l_wrist"][1], pos_named["l_wrist"][2])
             msg.right_wrist     = Vector3(pos_named["r_wrist"][0], pos_named["r_wrist"][1], pos_named["r_wrist"][2])
             msg.success.data = True
-            rospy.logdebug("Created ROS msg!")
+            rospy.logdebug("Created Torso ROS msg!")
+
         except Exception as e:
             msg.success.data = False 
             rospy.logwarn_throttle(2, "Create ROS msg failed: {}".format(e))
 
         return msg
     
+    def get_hpe3d(self, predictions, publish_tfs=False): 
+        # Here we extract x_i, y_i from the PCL values (measured in m)
+        coords = self.get_coordinates(self.pcl, predictions, "xyz") 
+        o3d_coords = convert_pose_predictions_to_dict(self.pose_predictions)
+        # It would make sense to add maybe confidence or something like that :)
+        tfs, rgbd_pos_name = self.create_keypoint_tfs(o3d_coords, self.body25_indexing)
+        tfs, op_pos_named = self.create_keypoint_tfs(coords, self.body25_indexing)
+        if publish_tfs:
+            self.send_transforms(tfs)
+        rgbd_hpe3d_msg = packOPHumanPose3DMsg(rospy.Time.now(), op_pos_named)
+        openpose_hpe3d_msg = packOPHumanPose3DMsg(rospy.Time.now(), rgbd_pos_name)
+
+        return rgbd_hpe3d_msg, openpose_hpe3d_msg
+    
+    def get_upper_body3d(self, hpe_preds): 
+        coords = self.get_coordinates(self.pcl, hpe_preds, "xyz") 
+        tfs, pos_named = self.create_keypoint_tfs(coords, self.body25_indexing)
+        self.send_transforms(tfs)
+        torso3d_msg = self.packTorso3DMsg(pos_named)
+        return torso3d_msg
+    
+    def get_hand3d(self, hand_preds): 
+        coords = self.get_coordinates(self.pcl, hand_preds, "xyz") 
+        tfs, pos_named = self.create_keypoint_tfs(coords, self.hand_indexing)
+        self.send_transforms(tfs)
+        hand3d_msg = packHandPose3DMsg(rospy.Time.now(), pos_named)
+        return hand3d_msg
+    
+    def proc_hand_pose_est(self):
+        if self.use_hands:
+            try:
+                lhand3d_msg = self.get_hand3d(copy.deepcopy(self.l_hand_predictions))
+                self.lhand_pub.publish(lhand3d_msg)
+            except Exception as e:
+                rospy.logwarn("Failed to generate or publish left hand message: {}".format(e))
+            try: 
+                rhand3d_msg = self.get_hand3d(copy.deepcopy(self.r_hand_predictions))
+                self.rhand_pub.publish(rhand3d_msg)
+            except Exception as e:
+                rospy.logwarn("Failed to generate or publish right hand message: {}".format(e))
+
+    def packSimpleTorso3DMsg(self, bD):
+        msg = TorsoJointPositions()
+        msg.header = self.pcl.header
+        msg.frame_id.data = "camera_color_frame"
+        msg.thorax = Vector3(bD.T[0, 0], bD.T[1,0], bD.T[2,0])
+        msg.left_shoulder = Vector3(bD.T[0, 1], bD.T[1,1], bD.T[2,1])
+        msg.right_shoulder = Vector3(bD.T[0, 2], bD.T[1,2], bD.T[2,2])
+        msg.left_elbow = Vector3(bD.T[0, 3], bD.T[1,3], bD.T[2,3])
+        msg.right_elbow = Vector3(bD.T[0, 4], bD.T[1,4], bD.T[2,4])
+        msg.left_wrist = Vector3(bD.T[0, 5], bD.T[1,5], bD.T[2,5])
+        msg.right_wrist = Vector3(bD.T[0, 6], bD.T[1,6], bD.T[2,6])
+        msg.success.data = True
+        return msg
+
+    def publishMarkerArray(self, bD):
+        mA = MarkerArray()
+        i = 0
+        names = ["ls", "rs", "le", "re", "lw", "rw"]
+        for v in bD:
+            m_ = self.createMarker(v, i)
+            i+=1 
+            mA.markers.append(m_)
+        self.camera_est_pub.publish(mA)
+
+    def createMarker(self, v, i):
+        m_ = Marker()
+        m_.header.frame_id = "camera_color_frame"
+        m_.header.stamp = rospy.Time.now()
+        m_.type = m_.SPHERE
+        m_.id = i
+        m_.action = m_.ADD
+        m_.scale.x = 0.1
+        m_.scale.y = 0.1
+        m_.scale.z = 0.1
+        m_.color.a = 1.0
+        m_.color.r = 0.0
+        m_.color.g = 1.0
+        m_.color.b = 0.0
+        m_.pose.position.x = v[0]
+        m_.pose.position.y = v[1]
+        m_.pose.position.z = v[2]
+        m_.pose.orientation.x = 0
+        m_.pose.orientation.y = 0
+        m_.pose.orientation.z = 0
+        m_.pose.orientation.w = 1
+        return m_
 
     def run(self): 
-
+        cnt = 1; t_total = 0.0
         while not rospy.is_shutdown(): 
             
             run_ready = self.img_recv and self.cinfo_recv and self.pcl_recv and self.pred_recv
-            try:
-                if run_ready: 
-                    rospy.loginfo_throttle(30, "Publishing HPE3d!")
-                    # Maybe save indices for easier debugging
-                    start_time = rospy.Time.now().to_sec()
-                    # Get X,Y,Z coordinates for predictions
-                    coords = self.get_coordinates(self.pcl, self.predictions, "xyz") # rospy.logdebug("coords: {}".format(coords))
-                    # Create coordinate frames
-                    tfs, pos_named = self.create_keypoint_tfs(coords)
-                    # Send transforms
-                    self.send_transforms(tfs)
-                    # Publish created ROS msg 
-                    msg = self.create_ROSmsg(pos_named)
-                    if msg: 
-                        self.upper_body_3d_pub.publish(msg)
+            if run_ready: 
+                rospy.loginfo_throttle(30, "Publishing 3D pose of the human!")
+                # Maybe save indices for easier debugging
+                t_s = rospy.Time.now().to_sec()
+                # TODO: Move processing method to the control scripts
+                self.use_hpe = True
+                if self.use_hpe:
+                    # self.proc_hpe_est()
+                    rgbd_hpe3d_msg, openpose_hpe3d_msg = self.get_hpe3d(copy.deepcopy(self.predictions))
+                    self.rgbd_hpe3d_pub.publish(rgbd_hpe3d_msg)
+                    self.openpose_hpe3d_pub.publish(openpose_hpe3d_msg)
 
-                    measure_runtime = False; 
-                    if measure_runtime:
-                        duration = rospy.Time.now().to_sec() - start_time
-                        rospy.logdebug("Run t: {}".format(duration)) # --> very fast!
-
-                    self.rate.sleep()
-
-
-                else: 
-
-                    self.debug_print()
-            except Exception as e: 
-                rospy.logwarn("Run failed: {}".format(e))
+                self.use_hands = False
+                # TODO: Move to separate method
+                if self.use_hands:
+                    self.process_hand_estimations()
                 
+                # TODO: Move to the separate method
+                debug_plot = False
+                if debug_plot:
+                    pil_img = convert_ros_to_pil_img(self.ros_img)
+                    img = plot_hand_keypoints(pil_img, self.r_hand_predictions)
+                    img = plot_hand_keypoints(pil_img, self.l_hand_predictions)
+                    ros_img = convert_pil_to_ros_img(img)
+                    self.debug_plot.publish(ros_img)
+                    convert_pil_to_ros_img()
 
-# Create Rotation matrices
-def get_RotX(angle): 
+                measure_runtime = True; 
+                # TODO: Should be moved to utils.py
+                if measure_runtime:
+                    cnt += 1
+                    t_delta = rospy.Time.now().to_sec() - t_s
+                    t_total += t_delta
+                    t_avg = t_total/cnt
+                
+                rospy.loginfo_throttle(1, f"Average loop duration is {t_avg}")
+            else: 
+                self.debug_print()
+
+            self.rate.sleep()
+
+
+def convert_pose_predictions_to_dict(predictions):
+
+    # Initialize the dictionary with empty lists
+    result = {'x': [], 'y': [], 'z': []}
+
+    # Populate the dictionary with wrapped tuples
+    for t in predictions:
+        result['x'].append((t[0],))
+        result['y'].append((t[1],))
+        result['z'].append((t[2],))
+    return result
+
+def create_homogenous_vector(v): 
+    return np.array([v[0], v[1], v[2], 1])
+
+# Create Rotation 
+def create_homogenous_matrix(R, t):
+    T = np.hstack((R, t.reshape(3, 1)))
+    T = np.vstack((T, np.array([0, 0, 0, 1])))
+    return T
+
+def get_RotX(angle): # 
     
     RX = np.array([[1, 0, 0], 
                    [0, np.cos(angle), -np.sin(angle)], 
-                   [0, np.sin(angle), np.cos(angle)]])
-    
+                   [0, np.sin(angle), np.cos(angle)]])    
     return RX
 
 def get_RotY(angle): 
@@ -365,14 +510,15 @@ def get_RotZ(angle):
     RZ = np.array([[np.cos(angle), -np.sin(angle), 0],
                    [np.sin(angle), np.cos(angle), 0], 
                    [ 0, 0, 1]] )
-    
     return RZ
 
+def pointToArray(msg): 
+    return np.array([msg.x, msg.y, msg.z])
 
 
 if __name__ == "__main__": 
 
-    hpe3D = HumanPose3D(sys.argv[1], sys.argv[2])
+    hpe3D = HPE2Dto3D(sys.argv[1], sys.argv[2])
     hpe3D.run()
 
 

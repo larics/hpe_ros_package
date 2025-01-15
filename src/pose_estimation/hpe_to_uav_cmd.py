@@ -9,15 +9,21 @@ import numpy as np
 
 from std_msgs.msg import Float64MultiArray, Float32
 from geometry_msgs.msg import Vector3
-from hpe_ros_package.msg import TorsoJointPositions
+from hpe_ros_msgs.msg import TorsoJointPositions
 from geometry_msgs.msg import PoseStamped, Pose
 from visualization_msgs.msg import Marker
+
+from utils import pointToArray, create_homogenous_vector, create_homogenous_matrix, get_RotX, get_RotY
 
 
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
 # - Read camera_info
 # - add painting of a z measurements
+
+UAV_CMD_TOPIC_NAME = "/red/tracker/input_pose"
+UAV_POS_TOPIC_NAME = "/red/pose"
+HPE3D_PRED_TOPIC_NAME = "/hpe3d/upper_body_3d"
 
 class hpe2uavcmd():
 
@@ -42,13 +48,15 @@ class hpe2uavcmd():
         self.tf_br = tf.TransformListener()
         self.ntf_br = tf.TransformBroadcaster()
 
-        rospy.loginfo("[Hpe3D] started!")
+        self.prev_pose_ref = PoseStamped()
+        self.first = True
+        rospy.loginfo("[Hpe3D] started!")   
 
     def _init_subscribers(self):
 
-        # self.hpe_3d_sub         = rospy.Subscriber("camera/color/image_raw", Image, self.hpe3d_cb, queue_size=1)
-        self.hpe_3d_sub = rospy.Subscriber("upper_body_3d", TorsoJointPositions, self.hpe3d_cb, queue_size=1)
-        self.pos_sub = rospy.Subscriber("/uav/pose", PoseStamped, self.pos_cb, queue_size=1)
+        # self.hpe_3d_sub  = rospy.Subscriber("camera/color/image_raw", Image, self.hpe3d_cb, queue_size=1)
+        self.hpe_3d_sub = rospy.Subscriber(HPE3D_PRED_TOPIC_NAME, TorsoJointPositions, self.hpe3d_cb, queue_size=1)
+        self.pos_sub = rospy.Subscriber(UAV_POS_TOPIC_NAME, PoseStamped, self.pos_cb, queue_size=1)
 
     def _init_publishers(self):
 
@@ -56,14 +64,11 @@ class hpe2uavcmd():
         # TODO: Add publisher for publishing joint angles
         # CMD publishers
         # Publish commands :)
-        # self.roll_pub = rospy.Publisher("roll")
-        # self.pitch_pub = rospy.Publisher("pitch")
-        # self.yaw_pub = rospy.Publisher("yaw")
-        # self.height_pub = rospy.Publisher("height")
-        self.gen_r_pub = rospy.Publisher("/uav/r", Vector3)
-        self.pos_pub = rospy.Publisher("/uav/pose_ref", Pose)
-        self.marker_pub = rospy.Publisher("ctl/viz", Marker)
-        self.cb_point_marker_pub = rospy.Publisher("ctl/cb_point", Marker)    
+        self.gen_r_pub = rospy.Publisher("/uav/pose_ref", Pose, queue_size=1)
+        self.pos_pub = rospy.Publisher(UAV_CMD_TOPIC_NAME, PoseStamped, queue_size=1)
+        self.marker_pub = rospy.Publisher("ctl/viz", Marker, queue_size=1)
+        self.cb_point_marker_pub = rospy.Publisher("ctl/cb_point", Marker, queue_size=1)    
+        
 
     def hpe3d_cb(self, msg):
 
@@ -80,7 +85,10 @@ class hpe2uavcmd():
         self.pos_recv = True
         self.currentPose = PoseStamped()
         self.currentPose.header = msg.header
-        self.currentPose.pose = msg.pose
+        self.currentPose.pose.position.x = msg.pose.position.x
+        self.currentPose.pose.position.y = msg.pose.position.y
+        self.currentPose.pose.position.z = msg.pose.position.z
+        self.currentPose.pose.orientation = msg.pose.orientation
 
     def createPvect(self, msg):
         # Create position vector from Vector3
@@ -135,39 +143,87 @@ class hpe2uavcmd():
         marker.color.r = 0.0
         marker.color.g = 1.0
         return marker
+    
+    def proc_hpe_est(self):
+        # TODO: Everything in this method should be moved to the separate ctl script
+        try:
+            hpe3d_msg = self.get_hpe3d(copy.deepcopy(self.predictions))
+            self.hpe3d_pub.publish(hpe3d_msg)
 
+            # TODO: Get torso coordinate frame [move this to a method]
+            # TODO: Compare this to the online estimation of the HPE by openpose
+            c_d_ls = pointToArray(hpe3d_msg.l_shoulder)
+            c_d_rs = pointToArray(hpe3d_msg.r_shoulder)
+            c_d_t  = pointToArray(hpe3d_msg.neck)
+            c_d_n  = pointToArray(hpe3d_msg.nose)
+            c_d_le = pointToArray(hpe3d_msg.l_elbow)
+            c_d_re = pointToArray(hpe3d_msg.r_elbow)
+            c_d_rw = pointToArray(hpe3d_msg.r_wrist)
+            c_d_lw = pointToArray(hpe3d_msg.l_wrist)
+
+            cD = np.array([create_homogenous_vector(c_d_t),
+                           create_homogenous_vector(c_d_ls), 
+                           create_homogenous_vector(c_d_rs), 
+                           create_homogenous_vector(c_d_le), 
+                           create_homogenous_vector(c_d_re), 
+                           create_homogenous_vector(c_d_lw), 
+                           create_homogenous_vector(c_d_rw)])
+
+            # body in the camera coordinate frame 
+            bRc = np.matmul(get_RotX(np.pi/2), get_RotY(np.pi/2))
+            # thorax in the camera frame --> TODO: Fix transformations
+            T = create_homogenous_matrix(bRc.T, c_d_t)
+            T_inv = np.linalg.inv(T)
+            # This seems like ok transformation for beginning :) 
+            bD = np.matmul(T_inv, cD.T).T
+            self.publishMarkerArray(bD)             
+
+            torso_msg = self.packSimpleTorso3DMsg(bD)
+            self.upper_body_3d_pub.publish(torso_msg)
+        except Exception as e:
+            rospy.logwarn("Failed to generate or publish HPE3d message: {}".format(e))
+
+    # TODO: Write it as a matrix because this is horrendous
     def run_ctl(self, r, R):
+        
+        dist_x = -(self.p_base_lwrist[0] - self.calib_point.x )
+        dist_y = -(self.p_base_lwrist[1] - self.calib_point.y ) 
+        dist_z = -(self.p_base_lwrist[2] - self.calib_point.z ) 
 
-        dist_x = (self.p_base_lwrist[0] - self.calib_point.x )
-        dist_y = (self.p_base_lwrist[1] - self.calib_point.y ) 
-        dist_z = (self.p_base_lwrist[2] - self.calib_point.z ) 
-
-        self.body_ctl = Vector3()
-
-        # X,Y are swapped because CFs of UAV and World are rotated for 90 degs
-        if R > abs(dist_y) > r:
-            rospy.logdebug("Y: {}".format(dist_x))
-            self.body_ctl.x = dist_y
-        else:
-            self.body_ctl.x = 0
+        self.body_ctl = Pose()
 
         if R > abs(dist_x) > r:
-            rospy.logdebug("X: {}".format(dist_y))
-            self.body_ctl.y = dist_x
+            rospy.logdebug("Y: {}".format(dist_x))
+            self.body_ctl.position.x = dist_x
         else:
-            self.body_ctl.y = 0
+            self.body_ctl.position.x = 0
+
+        if R > abs(dist_y) > r:
+            rospy.logdebug("X: {}".format(dist_y))
+            self.body_ctl.position.y = dist_y
+        else:
+            self.body_ctl.position.y = 0
 
         if R > abs(dist_z) > r:
             rospy.logdebug("Z: {}".format(dist_z))
-            self.body_ctl.z = dist_z
+            self.body_ctl.position.z = dist_z
         else:
-            self.body_ctl.z = 0
+            self.body_ctl.position.z = 0
 
-        scaling_x = 0.3; scaling_y = 0.3; scaling_z = 0.1;
-        pos_ref = Pose()
-        pos_ref.position.x = self.currentPose.pose.position.x + self.body_ctl.x * scaling_x
-        pos_ref.position.y = self.currentPose.pose.position.y + self.body_ctl.y * scaling_y
-        pos_ref.position.z = self.currentPose.pose.position.z + self.body_ctl.z * scaling_z
+        scaling_x = 0.25; scaling_y = 0.25; scaling_z = 0.25;
+        pos_ref = PoseStamped()
+
+        if self.first:
+            pos_ref.pose.position = self.currentPose.pose.position
+            pos_ref.pose.orientation = self.currentPose.pose.orientation
+            self.prev_pose_ref = pos_ref
+        else: 
+            pos_ref.pose.position.x = self.prev_pose_ref.pose.position.x + self.body_ctl.position.x * scaling_x
+            pos_ref.pose.position.y = self.prev_pose_ref.pose.position.y + self.body_ctl.position.y * scaling_y
+            pos_ref.pose.position.z = self.prev_pose_ref.pose.position.z + self.body_ctl.position.z * scaling_z
+            pos_ref.pose.orientation = self.prev_pose_ref.pose.orientation
+        
+        self.prev_pose_ref = pos_ref
         
         self.pos_pub.publish(pos_ref)
         self.gen_r_pub.publish(self.body_ctl)
@@ -176,6 +232,7 @@ class hpe2uavcmd():
         arrowMsg = self.create_marker(Marker.ARROW, self.calib_point.x, self.calib_point.y, self.calib_point.z, 
                                       dist_x, dist_y, dist_z)
         self.marker_pub.publish(arrowMsg)
+        self.first = False
 
         debug = False
         if debug:
@@ -186,11 +243,14 @@ class hpe2uavcmd():
     def run(self):
 
         calibrated = False
+        rospy.sleep(5.0)
         while not rospy.is_shutdown():
             # Multiple conditions neccessary to run program!
             run_ready = self.hpe3d_recv
             calibration_timeout = 10
 
+            self.proc_hpe_est()
+        
             # First run condition
             if run_ready and not calibrated:
 
