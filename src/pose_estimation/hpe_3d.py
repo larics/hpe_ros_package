@@ -138,8 +138,9 @@ class HPE2Dto3D():
         self.left_wrist_pub     = rospy.Publisher("leftw_point", Vector3, queue_size=1)
         self.right_wrist_pub    = rospy.Publisher("rightw_point", Vector3, queue_size=1)
         self.upper_body_3d_pub  = rospy.Publisher("upper_body_3d", TorsoJointPositions, queue_size=1)
-        self.hpe3d_pub          = rospy.Publisher("hpe3d", HumanPose3D, queue_size=1)
-        self.rhand_pub         = rospy.Publisher("rhand3d", HandPose3D, queue_size=1)
+        self.rgbd_hpe3d_pub     = rospy.Publisher("rgbd_hpe3d", HumanPose3D, queue_size=1)
+        self.openpose_hpe3d_pub = rospy.Publisher("openpose_hpe3d", HumanPose3D, queue_size=1)
+        self.rhand_pub          = rospy.Publisher("rhand3d", HandPose3D, queue_size=1)
         self.lhand_pub          = rospy.Publisher("lhand3d", HandPose3D, queue_size=1)
         self.camera_est_pub = rospy.Publisher("camera_estimation", MarkerArray, queue_size=1)
         rospy.loginfo("Initialized publishers!")
@@ -337,12 +338,16 @@ class HPE2Dto3D():
     def get_hpe3d(self, predictions, publish_tfs=False): 
         # Here we extract x_i, y_i from the PCL values (measured in m)
         coords = self.get_coordinates(self.pcl, predictions, "xyz") 
+        o3d_coords = convert_pose_predictions_to_dict(self.pose_predictions)
         # It would make sense to add maybe confidence or something like that :)
-        tfs, pos_named = self.create_keypoint_tfs(coords, self.body25_indexing)
+        tfs, rgbd_pos_name = self.create_keypoint_tfs(o3d_coords, self.body25_indexing)
+        tfs, op_pos_named = self.create_keypoint_tfs(coords, self.body25_indexing)
         if publish_tfs:
             self.send_transforms(tfs)
-        hpe3d_msg = packOPHumanPose3DMsg(rospy.Time.now(), pos_named)
-        return hpe3d_msg
+        rgbd_hpe3d_msg = packOPHumanPose3DMsg(rospy.Time.now(), op_pos_named)
+        openpose_hpe3d_msg = packOPHumanPose3DMsg(rospy.Time.now(), rgbd_pos_name)
+
+        return rgbd_hpe3d_msg, openpose_hpe3d_msg
     
     def get_upper_body3d(self, hpe_preds): 
         coords = self.get_coordinates(self.pcl, hpe_preds, "xyz") 
@@ -372,8 +377,8 @@ class HPE2Dto3D():
                 rospy.logwarn("Failed to generate or publish right hand message: {}".format(e))
 
     def proc_hpe_est(self):
+        # TODO: Everything in this method should be moved to the separate ctl script
         try:
-            # TODO: Add comparison of the openpose estimation and the 3D pose estimation 
             hpe3d_msg = self.get_hpe3d(copy.deepcopy(self.predictions))
             self.hpe3d_pub.publish(hpe3d_msg)
 
@@ -466,9 +471,13 @@ class HPE2Dto3D():
                 rospy.loginfo_throttle(30, "Publishing 3D pose of the human!")
                 # Maybe save indices for easier debugging
                 t_s = rospy.Time.now().to_sec()
+                # TODO: Move processing method to the control scripts
                 self.use_hpe = True
                 if self.use_hpe:
-                    self.proc_hpe_est()
+                    # self.proc_hpe_est()
+                    rgbd_hpe3d_msg, openpose_hpe3d_msg = self.get_hpe3d(copy.deepcopy(self.predictions))
+                    self.rgbd_hpe3d_pub.publish(rgbd_hpe3d_msg)
+                    self.openpose_hpe3d_pub.publish(openpose_hpe3d_msg)
 
                 self.use_hands = False
                 # TODO: Move to separate method
@@ -499,6 +508,17 @@ class HPE2Dto3D():
 
             self.rate.sleep()
 
+def convert_pose_predictions_to_dict(predictions):
+
+    # Initialize the dictionary with empty lists
+    result = {'x': [], 'y': [], 'z': []}
+
+    # Populate the dictionary with wrapped tuples
+    for t in predictions:
+        result['x'].append((t[0],))
+        result['y'].append((t[1],))
+        result['z'].append((t[2],))
+    return result
 
 def create_homogenous_vector(v): 
     return np.array([v[0], v[1], v[2], 1])
