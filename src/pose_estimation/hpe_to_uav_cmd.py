@@ -13,6 +13,8 @@ from hpe_ros_msgs.msg import TorsoJointPositions
 from geometry_msgs.msg import PoseStamped, Pose
 from visualization_msgs.msg import Marker
 
+from utils import pointToArray, create_homogenous_vector, create_homogenous_matrix, get_RotX, get_RotY
+
 
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
@@ -141,6 +143,45 @@ class hpe2uavcmd():
         marker.color.r = 0.0
         marker.color.g = 1.0
         return marker
+    
+    def proc_hpe_est(self):
+        # TODO: Everything in this method should be moved to the separate ctl script
+        try:
+            hpe3d_msg = self.get_hpe3d(copy.deepcopy(self.predictions))
+            self.hpe3d_pub.publish(hpe3d_msg)
+
+            # TODO: Get torso coordinate frame [move this to a method]
+            # TODO: Compare this to the online estimation of the HPE by openpose
+            c_d_ls = pointToArray(hpe3d_msg.l_shoulder)
+            c_d_rs = pointToArray(hpe3d_msg.r_shoulder)
+            c_d_t  = pointToArray(hpe3d_msg.neck)
+            c_d_n  = pointToArray(hpe3d_msg.nose)
+            c_d_le = pointToArray(hpe3d_msg.l_elbow)
+            c_d_re = pointToArray(hpe3d_msg.r_elbow)
+            c_d_rw = pointToArray(hpe3d_msg.r_wrist)
+            c_d_lw = pointToArray(hpe3d_msg.l_wrist)
+
+            cD = np.array([create_homogenous_vector(c_d_t),
+                           create_homogenous_vector(c_d_ls), 
+                           create_homogenous_vector(c_d_rs), 
+                           create_homogenous_vector(c_d_le), 
+                           create_homogenous_vector(c_d_re), 
+                           create_homogenous_vector(c_d_lw), 
+                           create_homogenous_vector(c_d_rw)])
+
+            # body in the camera coordinate frame 
+            bRc = np.matmul(get_RotX(np.pi/2), get_RotY(np.pi/2))
+            # thorax in the camera frame --> TODO: Fix transformations
+            T = create_homogenous_matrix(bRc.T, c_d_t)
+            T_inv = np.linalg.inv(T)
+            # This seems like ok transformation for beginning :) 
+            bD = np.matmul(T_inv, cD.T).T
+            self.publishMarkerArray(bD)             
+
+            torso_msg = self.packSimpleTorso3DMsg(bD)
+            self.upper_body_3d_pub.publish(torso_msg)
+        except Exception as e:
+            rospy.logwarn("Failed to generate or publish HPE3d message: {}".format(e))
 
     # TODO: Write it as a matrix because this is horrendous
     def run_ctl(self, r, R):
@@ -207,6 +248,8 @@ class hpe2uavcmd():
             # Multiple conditions neccessary to run program!
             run_ready = self.hpe3d_recv
             calibration_timeout = 10
+
+            self.proc_hpe_est()
         
             # First run condition
             if run_ready and not calibrated:
