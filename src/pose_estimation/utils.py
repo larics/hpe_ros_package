@@ -23,12 +23,14 @@ def arrayToPoint(array, point):
     point.z = array[2]
     return point
 
+def pointToArray(msg): 
+    return np.array([msg.x, msg.y, msg.z])
+
 def dictValByKeyToPoint(dict, key, point):
     point.x = dict[key][0]
     point.y = dict[key][1]
     point.z = dict[key][2]
     return point
-
 
 # Create Rotation matrices
 def get_RotX(angle):  
@@ -116,6 +118,7 @@ def packHumanPose3DMsg(now, keypoints):
     msg.l_ankle     = arrayToPoint(keypoints[:, 15], msg.l_ankle)
     msg.r_ankle     = arrayToPoint(keypoints[:, 16], msg.r_ankle)
     return msg
+
 
 def packOPHumanPose3DMsg(now, keypoints):
     msg = HumanPose3D()
