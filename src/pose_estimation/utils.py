@@ -70,6 +70,32 @@ def packTorsoPositionMsg(now, keypoints):
     #msg.success = True
     return msg
 
+def packTorso3DMsg(self, pos_named, header): 
+    # TODO: Pack this into packTorsoPoseMsg method
+    msg = TorsoJointPositions()
+    msg.header          = header
+    msg.frame_id.data   = "camera_color_frame"
+    try:
+        # COCO doesn't have THORAX! TODO: modify this to fit coco and body25 
+        if self.coco or self.body25: 
+            thorax = Vector3((pos_named["l_shoulder"][0] + pos_named["r_shoulder"][0])/2, 
+                             (pos_named["l_shoulder"][1] + pos_named["r_shoulder"][1])/2, 
+                             (pos_named["l_shoulder"][2] + pos_named["r_shoulder"][2])/2)
+            msg.thorax = thorax
+        else: 
+            msg.thorax      = Vector3(pos_named["thorax"][0], pos_named["thorax"][1], pos_named["thorax"][2])
+        msg.left_elbow      = Vector3(pos_named["l_elbow"][0], pos_named["l_elbow"][1], pos_named["l_elbow"][2])
+        msg.right_elbow     = Vector3(pos_named["r_elbow"][0], pos_named["r_elbow"][1], pos_named["r_elbow"][2])
+        msg.left_shoulder   = Vector3(pos_named["l_shoulder"][0], pos_named["l_shoulder"][1], pos_named["l_shoulder"][2])
+        msg.right_shoulder  = Vector3(pos_named["r_shoulder"][0], pos_named["r_shoulder"][1], pos_named["r_shoulder"][2])
+        msg.left_wrist      = Vector3(pos_named["l_wrist"][0], pos_named["l_wrist"][1], pos_named["l_wrist"][2])
+        msg.right_wrist     = Vector3(pos_named["r_wrist"][0], pos_named["r_wrist"][1], pos_named["r_wrist"][2])
+        msg.success.data = True
+    except Exception as e:
+        msg.success.data = False 
+
+    return msg
+
 # Pack and unpack ROS messages for HumanPose2D and HandPose2D
 def packHumanPose2DMsg(now, keypoints):
     # Create ROS msg based on the keypoints
@@ -118,7 +144,6 @@ def packHumanPose3DMsg(now, keypoints):
     msg.l_ankle     = arrayToPoint(keypoints[:, 15], msg.l_ankle)
     msg.r_ankle     = arrayToPoint(keypoints[:, 16], msg.r_ankle)
     return msg
-
 
 def packOPHumanPose3DMsg(now, keypoints):
     msg = HumanPose3D()
@@ -284,6 +309,14 @@ def index_and_operation(A, keys, indices, operation):
     Method prototype, probably should include some overloading. 
     """
     A = get_allocation_matrix((len(keys), 3))
+
+def create_homogenous_vector(vector):
+    return np.append(vector, 1)
+
+def create_homogenous_matrix(R, t):
+    T_ = np.matrix(np.hstack((R, t.reshape(3, 1))))
+    T = np.matrix(np.vstack((T_, np.array([0, 0, 0, 1])))).round(5)
+    return T
 
 # Losing precision here [How to quantify lost precision here?]
 def resize_preds_on_original_size(preds, img_size):

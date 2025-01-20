@@ -44,13 +44,12 @@ class HPE2Dto3D():
         self.pred_recv          = False
         self.cinfo_recv         = False 
 
-        # Camera CF for depth (LENSES - Z direction)
+        # Camera CF for depth (LENSES - Z direction) #TODO: For realsense, check for Luxonis
         #  A z
         #  |
         #  |
         #  X -----> x
         #  x goes right, y points down and z points from the camera viewpoint
-
         self.init_x_rot = 0 #-90 - 40 # - 30 due to pitch
         self.init_y_rot = 0
         self.init_z_rot = 0 #
@@ -125,7 +124,7 @@ class HPE2Dto3D():
             #self.predictions_sub    = message_filters.Subscriber("/hpe_2d", Frame)
             self.depth_sub          = message_filters.Subscriber("/camera/depth/color/points", PointCloud2)
             # Doesn't matter! 
-            self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 10)
+            self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 30)
             self.ats.registerCallback(self.frame_pcl_cb)
 
         else: 
@@ -305,36 +304,7 @@ class HPE2Dto3D():
             rospy.logwarn_throttle(1, "Camera info is not recieved! Check camera and topic name.")
         if not self.pred_recv: 
             rospy.logwarn_throttle(1, "Prediction is not recieved! Check topic names, camera type and model initialization!")
-
-    def packTorso3DMsg(self, pos_named): 
-        # TODO: Pack this into packTorsoPoseMsg method
-        msg = TorsoJointPositions()
-        msg.header          = self.pcl.header
-        msg.frame_id.data        = "camera_color_frame"
-        try:
-            # COCO doesn't have THORAX!
-            if self.coco or self.body25: 
-                thorax = Vector3((pos_named["l_shoulder"][0] + pos_named["r_shoulder"][0])/2, 
-                                 (pos_named["l_shoulder"][1] + pos_named["r_shoulder"][1])/2, 
-                                 (pos_named["l_shoulder"][2] + pos_named["r_shoulder"][2])/2)
-                msg.thorax = thorax
-            else: 
-                msg.thorax      = Vector3(pos_named["thorax"][0], pos_named["thorax"][1], pos_named["thorax"][2])
-            msg.left_elbow      = Vector3(pos_named["l_elbow"][0], pos_named["l_elbow"][1], pos_named["l_elbow"][2])
-            msg.right_elbow     = Vector3(pos_named["r_elbow"][0], pos_named["r_elbow"][1], pos_named["r_elbow"][2])
-            msg.left_shoulder   = Vector3(pos_named["l_shoulder"][0], pos_named["l_shoulder"][1], pos_named["l_shoulder"][2])
-            msg.right_shoulder  = Vector3(pos_named["r_shoulder"][0], pos_named["r_shoulder"][1], pos_named["r_shoulder"][2])
-            msg.left_wrist      = Vector3(pos_named["l_wrist"][0], pos_named["l_wrist"][1], pos_named["l_wrist"][2])
-            msg.right_wrist     = Vector3(pos_named["r_wrist"][0], pos_named["r_wrist"][1], pos_named["r_wrist"][2])
-            msg.success.data = True
-            rospy.logdebug("Created Torso ROS msg!")
-
-        except Exception as e:
-            msg.success.data = False 
-            rospy.logwarn_throttle(2, "Create ROS msg failed: {}".format(e))
-
-        return msg
-    
+ 
     def get_hpe3d(self, predictions, publish_tfs=False): 
         # Here we extract x_i, y_i from the PCL values (measured in m)
         coords = self.get_coordinates(self.pcl, predictions, "xyz") 
@@ -353,7 +323,7 @@ class HPE2Dto3D():
         coords = self.get_coordinates(self.pcl, hpe_preds, "xyz") 
         tfs, pos_named = self.create_keypoint_tfs(coords, self.body25_indexing)
         self.send_transforms(tfs)
-        torso3d_msg = self.packTorso3DMsg(pos_named)
+        torso3d_msg = self.packTorso3DMsg(pos_named, self.pcl.header)
         return torso3d_msg
     
     def get_hand3d(self, hand_preds): 
