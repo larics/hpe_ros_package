@@ -49,5 +49,8 @@ roslaunch hpe_ros_package hh_trt_inference.launch
 - [ ] Add more complex remapping for different systems 
 - [ ] Check measuremet precision 
 - [ ] Filter measurements with Kalman and check which indexing is used
-- [ ] Publish Hand predictions in the image space
+- [x] Publish Hand predictions in the image space
 
+## Ideas for improvement: 
+- [ ] Add median filtering
+- [ ] Add filtering based on the score

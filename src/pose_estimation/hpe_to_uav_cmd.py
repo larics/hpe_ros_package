@@ -73,10 +73,11 @@ class hpe2uavcmd():
         self.cb_point_marker_pub = rospy.Publisher("ctl/cb_point", Marker, queue_size=1)    
 
     def hpe3d_cb(self, msg):
-        self.hpe3d_recv = True
         rospy.loginfo_once("Recieved HPE3D message")
         self.hpe3d_msg = HumanPose3D()
         self.hpe3d_msg = msg
+        self.hpe3d_recv = True
+
 
     def pos_cb(self, msg):
 
@@ -109,9 +110,10 @@ class hpe2uavcmd():
 
         else:
             rospy.loginfo("Calibration procedure finished!")
-            x = [p[0] for p in self.p_list]
-            y = [p[1] for p in self.p_list]
-            z = [p[2] for p in self.p_list]
+            n = 25 # Remove first 50 measurements, movement at first is not stable
+            x = [p[0] for p in self.p_list][n:]
+            y = [p[1] for p in self.p_list][n:]
+            z = [p[2] for p in self.p_list][n:]
             self.calib_point = Vector3()
             self.calib_point.x = sum(x)/len(x)
             self.calib_point.y = sum(y)/len(y)
@@ -144,7 +146,6 @@ class hpe2uavcmd():
         return marker
     
     def proc_hpe_est(self):
-        # TODO: Everything in this method should be moved to the separate ctl script
         try:
 
             # TODO: Get torso coordinate frame [move this to a method]
@@ -175,9 +176,9 @@ class hpe2uavcmd():
             bD = np.matmul(T, cD.T).T
             # This is in the coordinate frame of the camera
             self.bD = bD
-
+            # Right wrist in the body frame
             self.b_d_rw = np.matmul(bRc, c_d_rw - c_d_t) 
-            #rospy.loginfo("b_d_rw: {}".format(self.b_d_rw))
+            # Left wrist in the body frame
             self.b_d_lw = np.matmul(bRc, c_d_lw - c_d_t)
             #self.publishMarkerArray(bD)             
 
@@ -189,54 +190,43 @@ class hpe2uavcmd():
     # TODO: Write it as a matrix because this is horrendous
     def run_ctl(self, r, R):
 
-        # Calc r
-        dist_x = -(self.b_d_rw[0] - self.calib_point.x )
-        dist_y = (self.b_d_rw[1] - self.calib_point.y ) 
-        dist_z = -(self.b_d_rw[2] - self.calib_point.z ) 
+        # Calc pos r
+        dist_x = (self.calib_point.x - self.b_d_rw[0])
+        dist_y = (self.calib_point.y - self.b_d_rw[1]) 
+        dist_z = (self.calib_point.z - self.b_d_rw[2]) 
 
         self.body_ctl = Pose()
-        test_ref = Vector3()
-        test_ref.x = dist_x
-        test_ref.y = dist_y
-        test_ref.z = dist_z
-        self.test_r_pub.publish(test_ref)
+        self.b_cmd = Vector3()
+        self.test_r_pub.publish(self.b_cmd)
 
         if R > abs(dist_x) > r:
             #rospy.logdebug("X: {}".format(dist_x))
-            self.body_ctl.position.x = dist_x
+            self.b_cmd.x = dist_x
         else:
-            self.body_ctl.position.x = 0
+            self.b_cmd.x = 0
 
         if R > abs(dist_y) > r:
             #rospy.logdebug("Y: {}".format(dist_y))
-            self.body_ctl.position.y = dist_y
+            self.b_cmd.y = dist_y
         else:
-            self.body_ctl.position.y = 0
+            self.b_cmd.y = 0
 
         if R > abs(dist_z) > r:
             #rospy.logdebug("Z: {}".format(dist_z))
-            self.body_ctl.position.z = dist_z
+            self.b_cmd.z = dist_z
         else:
-            self.body_ctl.position.z = 0
+            self.b_cmd.z = 0
 
-        scaling_x = 0.25; scaling_y = 0.25; scaling_z = 0.25;
+        scaling_x = 0.05; scaling_y = 0.05; scaling_z = 0.05;
         pos_ref = PoseStamped()
 
-        # Generate pose_ref
-        if self.first:
-            pos_ref.pose.position = self.currentPose.pose.position
-            pos_ref.pose.orientation = self.currentPose.pose.orientation
+        # Generate pose_ref 
+        gen_r = True
+        if gen_r:
+            pos_ref = self.generate_cmd(scaling_x, scaling_y, scaling_z, pos_ref)
             self.prev_pose_ref = pos_ref
-        else: 
-            pos_ref.pose.position.x = self.prev_pose_ref.pose.position.x + self.body_ctl.position.x * scaling_x
-            pos_ref.pose.position.y = self.prev_pose_ref.pose.position.y + self.body_ctl.position.y * scaling_y
-            pos_ref.pose.position.z = self.prev_pose_ref.pose.position.z + self.body_ctl.position.z * scaling_z
-            pos_ref.pose.orientation = self.prev_pose_ref.pose.orientation
-        
-        self.prev_pose_ref = pos_ref
         
         self.pos_pub.publish(pos_ref)
-        self.gen_r_pub.publish(self.body_ctl)
 
         # ARROW to visualize direction of a command
         arrowMsg = self.create_marker(Marker.ARROW, self.calib_point.x, self.calib_point.y, self.calib_point.z, 
@@ -244,11 +234,21 @@ class hpe2uavcmd():
         self.marker_pub.publish(arrowMsg)
         self.first = False
 
-        debug = False
+        debug = True
         if debug:
-            rospy.loginfo("Dist z: {}".format(dist_z))
-            rospy.loginfo("Publishing z: {}".format(pos_ref.z))
             rospy.loginfo("dx: {}\t dy: {}\t dz: {}\t".format(dist_x, dist_y, dist_z))
+
+    def generate_cmd(self, sx, sy, sz, pos_ref):
+        if self.first:
+            pos_ref.pose.position = self.currentPose.pose.position
+            pos_ref.pose.orientation = self.currentPose.pose.orientation
+        else: 
+            pos_ref.pose.position.x = self.prev_pose_ref.pose.position.x + sx * self.b_cmd.x
+            pos_ref.pose.position.y = self.prev_pose_ref.pose.position.y + sy * self.b_cmd.y
+            pos_ref.pose.position.z = self.prev_pose_ref.pose.position.z + sz * self.b_cmd.z
+            pos_ref.pose.orientation = self.prev_pose_ref.pose.orientation
+
+        return pos_ref
 
     def run(self):
 
@@ -257,18 +257,18 @@ class hpe2uavcmd():
         while not rospy.is_shutdown():
             # Multiple conditions neccessary to run program!
             run_ready = self.hpe3d_recv
-            calibration_timeout = 10
+            calib_duration = 10
             self.proc_hpe_est()
         
             # First run condition
             if run_ready and not calibrated:
 
-                calibrated = self.calibrate(calibration_timeout)
+                calibrated = self.calibrate(calib_duration)
 
             # We can start control if we have calibrated point
             if run_ready and calibrated:
-                r_ = 0.10
-                R_ = 0.40
+                r_ = 0.05
+                R_ = 0.25
                 # Deadzone is 
                 self.run_ctl(r_, R_)
                 
