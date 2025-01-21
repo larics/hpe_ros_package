@@ -13,7 +13,7 @@ from geometry_msgs.msg import Vector3
 from hpe_ros_msgs.msg import TorsoJointPositions
 from geometry_msgs.msg import PoseStamped, Pose
 from visualization_msgs.msg import Marker
-from hpe_ros_msgs.msg import HumanPose3D, HandPose3D
+from hpe_ros_msgs.msg import HumanPose3D, HandPose3D, MpHumanPose3D
 
 from utils import pointToArray, create_homogenous_vector, create_homogenous_matrix, get_RotX, get_RotY, get_RotZ
 
@@ -23,10 +23,18 @@ from utils import pointToArray, create_homogenous_vector, create_homogenous_matr
 # - Read camera_info
 # - add painting of a z measurements
 
+# Constants
+HPE = "OPENPOSE"
 UAV_CMD_TOPIC_NAME = "/red/tracker/input_pose"
 UAV_POS_TOPIC_NAME = "/red/pose"
-HPE3D_PRED_TOPIC_NAME = "/hpe3d/openpose_hpe3d"
-R_HAND3D_PRED_TOPIC_NAME = "/hpe3d/rhand3d"
+
+if HPE == "OPENPOSE":
+    HPE3D_PRED_TOPIC_NAME = "/hpe3d/openpose_hpe3d"
+    hpe_msg_type=HumanPose3D
+
+if HPE == "MPI":
+    HPE3D_PRED_TOPIC_NAME = "/hpe3d/mpi_hpe3d"
+    hpe_msg_type=MpHumanPose3D
 
 class hpe2uavcmd():
 
@@ -58,8 +66,7 @@ class hpe2uavcmd():
     def _init_subscribers(self):
 
         # self.hpe_3d_sub  = rospy.Subscriber("camera/color/image_raw", Image, self.hpe3d_cb, queue_size=1)
-        self.hpe_3d_sub = rospy.Subscriber(HPE3D_PRED_TOPIC_NAME, HumanPose3D, self.hpe3d_cb, queue_size=1)
-        self.hand_3d_sub = rospy.Subscriber(R_HAND3D_PRED_TOPIC_NAME, HandPose3D, self.hand3d_cb, queue_size=1)
+        self.hpe_3d_sub = rospy.Subscriber(HPE3D_PRED_TOPIC_NAME, hpe_msg_type, self.hpe3d_cb, queue_size=1)
         self.pos_sub = rospy.Subscriber(UAV_POS_TOPIC_NAME, PoseStamped, self.pos_cb, queue_size=1)
 
     def _init_publishers(self):
