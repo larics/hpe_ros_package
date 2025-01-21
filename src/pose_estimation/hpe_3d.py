@@ -410,10 +410,10 @@ class HPE2Dto3D():
                     self.rgbd_hpe3d_pub.publish(rgbd_hpe3d_msg)
                     self.openpose_hpe3d_pub.publish(openpose_hpe3d_msg)
 
-                self.use_hands = False
+                self.use_hands = True
                 # TODO: Move to separate method
                 if self.use_hands:
-                    self.process_hand_estimations()
+                    self.proc_hand_pose_est()
                 
                 # TODO: Move to the separate method
                 debug_plot = False
