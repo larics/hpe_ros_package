@@ -5,7 +5,7 @@ ROS package for human pose estimation with [Microsoft SimpleBaselines](https://g
 
 ### System visualization 
 ![system](./include/system.png)
-ž
+
 ### Start camera
 
 Realsense [use realsense docker]: 
@@ -46,6 +46,9 @@ roslaunch hpe_ros_package hh_trt_inference.launch
 - [x] Lift predictions to the 3D space using camera depth
 - [x] Add init remapping
 - [x] Add message syncronizer for the depth and estimate 
+- [ ] Calibration [avg(median)]
+- [ ] Init yaw ctl
+- [ ] Some type of switch!  
 - [ ] Add more complex remapping for different systems 
 - [ ] Check measuremet precision 
 - [ ] Filter measurements with Kalman and check which indexing is used
