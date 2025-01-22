@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 
 from hpe_ros_msgs.msg import HumanPose2D, HandPose2D, HumanPose3D, HandPose3D, TorsoJointPositions
-from geometry_msgs.msg import Vector3, Point
+from geometry_msgs.msg import Vector3, Point, Twist
 import numpy as np
 
 def limitCmd(cmd, upperLimit, lowerLimit):
@@ -341,3 +341,13 @@ def remove_nans(matrix):
     #swap nans with zeros
     matrix[np.isnan(matrix)] = 0
     return matrix
+
+def getZeroTwist(): 
+    tw = Twist()
+    tw.linear.x = 0
+    tw.linear.y = 0
+    tw.linear.z = 0
+    tw.angular.x = 0
+    tw.angular.y = 0
+    tw.angular.z = 0
+    return tw
