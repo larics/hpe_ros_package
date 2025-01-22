@@ -485,9 +485,7 @@ def get_RotZ(angle):
 def pointToArray(msg): 
     return np.array([msg.x, msg.y, msg.z])
 
-
 if __name__ == "__main__": 
-
     hpe3D = HPE2Dto3D(sys.argv[1], sys.argv[2])
     hpe3D.run()
 

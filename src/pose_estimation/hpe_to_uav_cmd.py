@@ -33,7 +33,7 @@ if HPE == "OPENPOSE":
     hpe_msg_type=HumanPose3D
 
 if HPE == "MPI":
-    HPE3D_PRED_TOPIC_NAME = "/hpe3d/mpi_hpe3d"
+    HPE3D_PRED_TOPIC_NAME = "/mp_ros/loc/hpe3d"
     hpe_msg_type=MpHumanPose3D
 
 class hpe2uavcmd():
@@ -62,6 +62,13 @@ class hpe2uavcmd():
         self.prev_pose_ref = PoseStamped()
         self.first = True
         rospy.loginfo("[Hpe3D] started!")   
+
+        if HPE == "OPENPOSE":
+            # body in the camera coordinate frame 
+            self.bRc = np.matmul(get_RotX(np.pi/2), get_RotY(np.pi/2))
+        if HPE == "MPI": 
+            # body in the camera coordinate frame 
+            self.bRc = get_RotY(np.pi)
 
     def _init_subscribers(self):
 
@@ -185,14 +192,15 @@ class hpe2uavcmd():
             # TODO: Compare this to the online estimation of the HPE by openpose
             c_d_ls = pointToArray(self.hpe3d_msg.l_shoulder)
             c_d_rs = pointToArray(self.hpe3d_msg.r_shoulder)
-            c_d_t  = pointToArray(self.hpe3d_msg.neck)
+            #c_d_t  = pointToArray(self.hpe3d_msg.neck)
             c_d_n  = pointToArray(self.hpe3d_msg.nose)
             c_d_le = pointToArray(self.hpe3d_msg.l_elbow)
             c_d_re = pointToArray(self.hpe3d_msg.r_elbow)
             c_d_rw = pointToArray(self.hpe3d_msg.r_wrist)
             c_d_lw = pointToArray(self.hpe3d_msg.l_wrist)
 
-            cD = np.array([create_homogenous_vector(c_d_t),
+            # Comented out OpenPose part
+            cD = np.array([#create_homogenous_vector(c_d_t),
                            create_homogenous_vector(c_d_ls), 
                            create_homogenous_vector(c_d_rs), 
                            create_homogenous_vector(c_d_le), 
@@ -200,19 +208,18 @@ class hpe2uavcmd():
                            create_homogenous_vector(c_d_rw),
                            create_homogenous_vector(c_d_lw)])
 
-            # body in the camera coordinate frame 
-            bRc = np.matmul(get_RotX(np.pi/2), get_RotY(np.pi/2))
+         
             # thorax in the camera frame --> TODO: Fix transformations
-            T = create_homogenous_matrix(bRc, np.zeros(3))
+            T = create_homogenous_matrix(self.bRc, np.zeros(3))
             # T_inv = np.linalg.inv(T)
             # This seems like ok transformation for beginning :) 
             bD = np.matmul(T, cD.T).T
             # This is in the coordinate frame of the camera
             self.bD = bD
             # Right wrist in the body frame
-            self.b_d_rw = np.matmul(bRc, c_d_rw - c_d_t) 
+            self.b_d_rw = np.matmul(self.bRc, c_d_rw) #- c_d_n) 
             # Left wrist in the body frame
-            self.b_d_lw = np.matmul(bRc, c_d_lw - c_d_t)
+            self.b_d_lw = np.matmul(self.bRc, c_d_lw) #- c_d_n)
             #self.publishMarkerArray(bD)             
 
             #torso_msg = self.packSimpleTorso3DMsg(bD)
@@ -234,28 +241,29 @@ class hpe2uavcmd():
 
         # TODO: Check this as vect
         if R > abs(dist_x) > r:
-            #rospy.logdebug("X: {}".format(dist_x))
+            rospy.logdebug("X: {}".format(dist_x))
             self.b_cmd.x = dist_x
         else:
             self.b_cmd.x = 0
 
         if R > abs(dist_y) > r:
-            #rospy.logdebug("Y: {}".format(dist_y))
+            rospy.logdebug("Y: {}".format(dist_y))
             self.b_cmd.y = dist_y
         else:
             self.b_cmd.y = 0
 
         if R > abs(dist_z) > r:
-            #rospy.logdebug("Z: {}".format(dist_z))
+            rospy.logdebug("Z: {}".format(dist_z))
             self.b_cmd.z = dist_z
         else:
             self.b_cmd.z = 0
+            
         
         # TODO: Move to roslaunch params
         scaling_x = 0.05; scaling_y = 0.05; scaling_z = 0.05;
         pos_ref = PoseStamped()
 
-        # Generate pose_ref 
+        # Generate pose_ref --> if DRY run do not generate cmd
         gen_r = False
         if gen_r:
             pos_ref = self.generate_cmd(scaling_x, scaling_y, scaling_z, pos_ref)
@@ -299,7 +307,6 @@ class hpe2uavcmd():
         
             # First run condition
             if run_ready and not calibrated:
-
                 calibrated = self.calibrate(calib_duration)
 
             # We can start control if we have calibrated point
