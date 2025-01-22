@@ -1,0 +1,11 @@
+<launch>
+	
+<arg name="frequency" value="25"/>
+<arg name="openpose" default="false"/>
+
+<node name="trt_pose_node" pkg="hpe_ros_package" type="hpe_trt_inference.py" output="screen" />
+
+<!-- Keeping the same openpose argument as a legcy (not necessary)-->
+<node name="trt3d_extraction" pkg="hpe_ros_package" type="hpe_trt_3d.py" args="$(arg frequency) $(arg openpose)" output="screen" />
+
+</launch>

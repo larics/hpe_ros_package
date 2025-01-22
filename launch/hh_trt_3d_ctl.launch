@@ -1,0 +1,17 @@
+<launch>
+
+<arg name="frequency" value="15"/>
+<arg name="openpose" value="default"/>
+
+<node name="trt_pose_node" pkg="hpe_ros_package" type="hh_trt_inference.py" output="screen" />
+
+<!-- Keeping the same openpose argument as a legcy (not necessary)-->
+<node name="trt3d_extraction" pkg="hpe_ros_package" type="hpe_trt_3d.py" args="$(arg frequency) $(arg openpose)" output="screen" />
+
+<!-- Add and run kalman -->
+<node name="kalman_filter" pkg="hpe_ros_package" type="kalman.py" args="$(arg frequency)" output="screen" />
+
+<!-- Add and run arm control -->
+<node name="arm_ctl_node" pkg="hpe_ros_package" type="hpe_to_arm_cmd.py" args="$(arg frequency)" output="screen" />
+
+</launch>

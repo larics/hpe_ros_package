@@ -1,0 +1,7 @@
+<launch>
+	
+
+<node name="trt_pose_node" pkg="hpe_ros_package" type="hpe_trt_inference.py" output="screen" />
+
+
+</launch>
