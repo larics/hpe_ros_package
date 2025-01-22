@@ -1,7 +1,8 @@
 #!/usr/bin/python3
 
 from hpe_ros_msgs.msg import HumanPose2D, HandPose2D, HumanPose3D, HandPose3D, TorsoJointPositions
-from geometry_msgs.msg import Vector3, Point, Twist
+from geometry_msgs.msg import Vector3, Point, Twist, Transform
+from visualization_msgs.msg import Marker, MarkerArray
 import numpy as np
 
 def limitCmd(cmd, upperLimit, lowerLimit):
@@ -26,13 +27,7 @@ def arrayToPoint(array, point):
 def pointToArray(msg): 
     return np.array([msg.x, msg.y, msg.z])
 
-def dictValByKeyToPoint(dict, key, point):
-    point.x = dict[key][0]
-    point.y = dict[key][1]
-    point.z = dict[key][2]
-    return point
-
-# Create Rotation matrices
+# Create Rotation matrices 
 def get_RotX(angle):  
     
     RX = np.array([[1, 0, 0], 
@@ -70,6 +65,20 @@ def packTorsoPositionMsg(now, keypoints):
     #msg.success = True
     return msg
 
+def packSimpleTorso3DMsg(now, bD):
+    msg = TorsoJointPositions()
+    msg.header = now
+    msg.frame_id.data = "camera_color_frame"
+    msg.thorax = Vector3(bD.T[0, 0], bD.T[1,0], bD.T[2,0])
+    msg.left_shoulder = Vector3(bD.T[0, 1], bD.T[1,1], bD.T[2,1])
+    msg.right_shoulder = Vector3(bD.T[0, 2], bD.T[1,2], bD.T[2,2])
+    msg.left_elbow = Vector3(bD.T[0, 3], bD.T[1,3], bD.T[2,3])
+    msg.right_elbow = Vector3(bD.T[0, 4], bD.T[1,4], bD.T[2,4])
+    msg.left_wrist = Vector3(bD.T[0, 5], bD.T[1,5], bD.T[2,5])
+    msg.right_wrist = Vector3(bD.T[0, 6], bD.T[1,6], bD.T[2,6])
+    msg.success.data = True
+    return msg
+
 def packTorso3DMsg(self, pos_named, header): 
     # TODO: Pack this into packTorsoPoseMsg method
     msg = TorsoJointPositions()
@@ -96,7 +105,6 @@ def packTorso3DMsg(self, pos_named, header):
 
     return msg
 
-# Pack and unpack ROS messages for HumanPose2D and HandPose2D
 def packHumanPose2DMsg(now, keypoints):
     # Create ROS msg based on the keypoints
     msg = HumanPose2D()
@@ -121,8 +129,6 @@ def packHumanPose2DMsg(now, keypoints):
     msg.r_ankle.x = keypoints[16][0]; msg.r_ankle.y = keypoints[16][1]
     return msg
 
-# TODO: Different annotations for different algorithms
-# SimpleBaselines vs OpenPose
 def packHumanPose3DMsg(now, keypoints):
     msg = HumanPose3D()
     msg.header.stamp = now
@@ -267,6 +273,12 @@ def unpackHandPose2DMsg(msg):
     hand_keypoints.append((msg.pinky3.x, msg.pinky3.y))
     return hand_keypoints
 
+def dictValByKeyToPoint(dict, key, point):
+    point.x = dict[key][0]
+    point.y = dict[key][1]
+    point.z = dict[key][2]
+    return point
+
 def dict_to_matrix(data_dict):
     """
     Converts a dictionary with keys x, y, z, and their corresponding lists
@@ -351,3 +363,47 @@ def getZeroTwist():
     tw.angular.y = 0
     tw.angular.z = 0
     return tw
+
+def getZeroTransform(): 
+    t = Transform()
+    t.translation.x = 0
+    t.translation.y = 0
+    t.translation.z = 0
+    t.rotation.x = 0
+    t.rotation.y = 0
+    t.rotation.z = 0
+    t.rotation.w = 1
+    return t
+
+def publishMarkerArray(self, bD):
+    mA = MarkerArray()
+    i = 0
+    names = ["ls", "rs", "le", "re", "lw", "rw"]
+    for v in bD:
+        m_ = createMarker(v, i)
+        i+=1 
+        mA.markers.append(m_)
+    return mA
+
+def createMarker(now, v, i):
+    m_ = Marker()
+    m_.header.frame_id = "camera_color_frame"
+    m_.header.stamp = now()
+    m_.type = m_.SPHERE
+    m_.id = i
+    m_.action = m_.ADD
+    m_.scale.x = 0.1
+    m_.scale.y = 0.1
+    m_.scale.z = 0.1
+    m_.color.a = 1.0
+    m_.color.r = 0.0
+    m_.color.g = 1.0
+    m_.color.b = 0.0
+    m_.pose.position.x = v[0]
+    m_.pose.position.y = v[1]
+    m_.pose.position.z = v[2]
+    m_.pose.orientation.x = 0
+    m_.pose.orientation.y = 0
+    m_.pose.orientation.z = 0
+    m_.pose.orientation.w = 1
+    return m_

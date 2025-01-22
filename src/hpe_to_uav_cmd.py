@@ -16,7 +16,7 @@ from visualization_msgs.msg import Marker
 from hpe_ros_msgs.msg import HumanPose3D, HandPose3D, MpHumanPose3D
 from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
 
-from utils import pointToArray, create_homogenous_vector, create_homogenous_matrix, get_RotX, get_RotY, get_RotZ, getZeroTwist
+from utils import pointToArray, create_homogenous_vector, create_homogenous_matrix, get_RotX, get_RotY, get_RotZ, getZeroTwist, getZeroTransform
 
 
 # TODO:
@@ -37,6 +37,9 @@ if HPE == "OPENPOSE":
 if HPE == "MPI":
     HPE3D_PRED_TOPIC_NAME = "/mp_ros/loc/hpe3d"
     hpe_msg_type=MpHumanPose3D
+
+CTL_TYPE = "POSITION" # RATE 
+CTL_TYPE = "RATE"
 
 class hpe2uavcmd():
 
@@ -281,14 +284,31 @@ class hpe2uavcmd():
             pos_ref.pose.orientation = self.prev_pose_ref.pose.orientation
 
         trajPt = MultiDOFJointTrajectoryPoint()
-        trajPt.transforms.append(Transform())
-        trajPt.transforms[0].translation.x = pos_ref.pose.position.x
-        trajPt.transforms[0].translation.y = pos_ref.pose.position.y
-        trajPt.transforms[0].translation.z = pos_ref.pose.position.z
-        trajPt.transforms[0].rotation = pos_ref.pose.orientation
-        trajPt.velocities.append(getZeroTwist())
-        trajPt.accelerations.append(getZeroTwist())
-        print(trajPt)
+        if CTL_TYPE == "POSITION":
+            # Generate MultiDOFJointTrajectory
+            trajPt.transforms.append(Transform())
+            trajPt.transforms[0].translation.x = pos_ref.pose.position.x
+            trajPt.transforms[0].translation.y = pos_ref.pose.position.y
+            trajPt.transforms[0].translation.z = pos_ref.pose.position.z
+            trajPt.transforms[0].rotation = pos_ref.pose.orientation
+            trajPt.velocities.append(getZeroTwist())
+            trajPt.accelerations.append(getZeroTwist())
+
+        if CTL_TYPE == "RATE": 
+            trajPt.transforms.append(getZeroTransform())
+            trajPt.transforms[0].translation.x = pos_ref.pose.position.x
+            trajPt.transforms[0].translation.y = pos_ref.pose.position.y
+            trajPt.transforms[0].translation.z = pos_ref.pose.position.z
+            trajPt.transforms[0].rotation = pos_ref.pose.orientation
+            trajPt.velocities.append(getZeroTwist())
+            trajPt.velocities[0].linear.x = self.b_cmd.x
+            trajPt.velocities[0].linear.y = self.b_cmd.y
+            trajPt.velocities[0].linear.z = self.b_cmd.z
+            trajPt.velocities[0].angular.x = 0
+            trajPt.velocities[0].angular.y = 0
+            trajPt.velocities[0].angular.z = 0
+            trajPt.accelerations.append(getZeroTwist())
+
         return trajPt
 
     def run(self):

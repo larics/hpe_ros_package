@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-
 import os
 import sys
 
@@ -44,6 +43,7 @@ class HPE2Dto3D():
         self.pred_recv          = False
         self.cinfo_recv         = False 
 
+        # TODO: publish in the camera frame (delegate to the robot later!)
         # Camera CF for depth (LENSES - Z direction) #TODO: For realsense, check for Luxonis
         #  A z
         #  |
@@ -295,7 +295,6 @@ class HPE2Dto3D():
             # use lookupTransform to fetch transform and estimate angles... 
 
     def debug_print(self): 
-
         if not self.img_recv:
             rospy.logwarn_throttle(1, "Image is not recieved! Check camera and topic name.")
         if not self.pcl_recv: 
@@ -346,53 +345,6 @@ class HPE2Dto3D():
             except Exception as e:
                 rospy.logwarn("Failed to generate or publish right hand message: {}".format(e))
 
-    def packSimpleTorso3DMsg(self, bD):
-        msg = TorsoJointPositions()
-        msg.header = self.pcl.header
-        msg.frame_id.data = "camera_color_frame"
-        msg.thorax = Vector3(bD.T[0, 0], bD.T[1,0], bD.T[2,0])
-        msg.left_shoulder = Vector3(bD.T[0, 1], bD.T[1,1], bD.T[2,1])
-        msg.right_shoulder = Vector3(bD.T[0, 2], bD.T[1,2], bD.T[2,2])
-        msg.left_elbow = Vector3(bD.T[0, 3], bD.T[1,3], bD.T[2,3])
-        msg.right_elbow = Vector3(bD.T[0, 4], bD.T[1,4], bD.T[2,4])
-        msg.left_wrist = Vector3(bD.T[0, 5], bD.T[1,5], bD.T[2,5])
-        msg.right_wrist = Vector3(bD.T[0, 6], bD.T[1,6], bD.T[2,6])
-        msg.success.data = True
-        return msg
-
-    def publishMarkerArray(self, bD):
-        mA = MarkerArray()
-        i = 0
-        names = ["ls", "rs", "le", "re", "lw", "rw"]
-        for v in bD:
-            m_ = self.createMarker(v, i)
-            i+=1 
-            mA.markers.append(m_)
-        self.camera_est_pub.publish(mA)
-
-    def createMarker(self, v, i):
-        m_ = Marker()
-        m_.header.frame_id = "camera_color_frame"
-        m_.header.stamp = rospy.Time.now()
-        m_.type = m_.SPHERE
-        m_.id = i
-        m_.action = m_.ADD
-        m_.scale.x = 0.1
-        m_.scale.y = 0.1
-        m_.scale.z = 0.1
-        m_.color.a = 1.0
-        m_.color.r = 0.0
-        m_.color.g = 1.0
-        m_.color.b = 0.0
-        m_.pose.position.x = v[0]
-        m_.pose.position.y = v[1]
-        m_.pose.position.z = v[2]
-        m_.pose.orientation.x = 0
-        m_.pose.orientation.y = 0
-        m_.pose.orientation.z = 0
-        m_.pose.orientation.w = 1
-        return m_
-
     def run(self): 
         cnt = 1; t_total = 0.0
         while not rospy.is_shutdown(): 
@@ -400,22 +352,18 @@ class HPE2Dto3D():
             run_ready = self.img_recv and self.cinfo_recv and self.pcl_recv and self.pred_recv
             if run_ready: 
                 rospy.loginfo_throttle(30, "Publishing 3D pose of the human!")
-                # Maybe save indices for easier debugging
                 t_s = rospy.Time.now().to_sec()
-                # TODO: Move processing method to the control scripts
+
                 self.use_hpe = True
                 if self.use_hpe:
-                    # self.proc_hpe_est()
                     rgbd_hpe3d_msg, openpose_hpe3d_msg = self.get_hpe3d(copy.deepcopy(self.predictions))
                     self.rgbd_hpe3d_pub.publish(rgbd_hpe3d_msg)
                     self.openpose_hpe3d_pub.publish(openpose_hpe3d_msg)
 
                 self.use_hands = True
-                # TODO: Move to separate method
                 if self.use_hands:
                     self.proc_hand_pose_est()
                 
-                # TODO: Move to the separate method
                 debug_plot = False
                 if debug_plot:
                     pil_img = convert_ros_to_pil_img(self.ros_img)
@@ -425,15 +373,13 @@ class HPE2Dto3D():
                     self.debug_plot.publish(ros_img)
                     convert_pil_to_ros_img()
 
-                measure_runtime = True; 
-                # TODO: Should be moved to utils.py
+                measure_runtime = False; 
                 if measure_runtime:
                     cnt += 1
                     t_delta = rospy.Time.now().to_sec() - t_s
                     t_total += t_delta
                     t_avg = t_total/cnt
-                
-                rospy.loginfo_throttle(1, f"Average loop duration is {t_avg}")
+                    rospy.loginfo_throttle(1, f"Average loop duration is {t_avg}")
             else: 
                 self.debug_print()
 
