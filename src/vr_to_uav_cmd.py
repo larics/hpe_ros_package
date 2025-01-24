@@ -8,16 +8,12 @@ import tf
 import numpy as np
 import copy
 
-from std_msgs.msg import Float64MultiArray, Float32
 from geometry_msgs.msg import Vector3
-from hpe_ros_msgs.msg import TorsoJointPositions
-from geometry_msgs.msg import PoseStamped, Pose, Transform
+from geometry_msgs.msg import PoseStamped, Pose, Transform, Twist
 from visualization_msgs.msg import Marker
-from hpe_ros_msgs.msg import HumanPose3D, HandPose3D, MpHumanPose3D
-from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
+from trajectory_msgs.msg import MultiDOFJointTrajectoryPoint
 
-from utils import getZeroTwist, getZeroTransform
-from linalg_utils import pointToArray, get_RotX, get_RotY, get_RotZ, create_homogenous_vector, create_homogenous_matrix
+from linalg_utils import pointToArray, create_homogenous_vector, create_homogenous_matrix, get_RotX, get_RotY, get_RotZ, getZeroTwist, getZeroTransform
 
 
 # TODO:
@@ -25,24 +21,22 @@ from linalg_utils import pointToArray, get_RotX, get_RotY, get_RotZ, create_homo
 # - Read camera_info
 # - add painting of a z measurements
 
-# Constants
-HPE = "OPENPOSE"
 UAV_CMD_TOPIC_NAME = "/red/tracker/input_pose"
 UAV_POS_TOPIC_NAME = "/red/pose"
 TRAJ_CMD_TOPIC_NAME = "/red/position_hold/trajectory"
 
-if HPE == "OPENPOSE":
-    HPE3D_PRED_TOPIC_NAME = "/hpe3d/openpose_hpe3d"
-    hpe_msg_type=HumanPose3D
-
-if HPE == "MPI":
-    HPE3D_PRED_TOPIC_NAME = "/mp_ros/loc/hpe3d"
-    hpe_msg_type=MpHumanPose3D
-
 CTL_TYPE = "POSITION" # RATE 
 CTL_TYPE = "RATE"
 
-class hpe2uavcmd():
+VR_POS_LW_TOPIC_NAME = "/vr/pos/lw"
+VR_POS_RW_TOPIC_NAME = "/vr/pos/rw"
+VR_TWIST_LW_TOPIC_NAME = "/vr/twist/lw"
+VR_TWIST_RW_TOPIC_NAME = "/vr/twist/rw"
+VR_POS_HEAD_TOPIC_NAME = "/vr/pos/head"
+VR_TWIST_HEAD_TOPIC_NAME = "/vr/twist/head"
+
+
+class vr2uavcmd():
 
     def __init__(self, freq):
 
@@ -69,22 +63,25 @@ class hpe2uavcmd():
         self.first = True
         rospy.loginfo("[Hpe3D] started!")   
 
-        if HPE == "OPENPOSE":
-            # body in the camera coordinate frame 
-            self.bRc = np.matmul(get_RotX(np.pi/2), get_RotY(np.pi/2))
-        if HPE == "MPI": 
-            # body in the camera coordinate frame 
-            self.bRc = get_RotY(np.pi)
+        # body in the camera coordinate frame (T to move to the coordiante frame)
+        self.bRvc = np.matmul(get_RotX(np.pi/2), get_RotY(np.pi/2))
+
 
     def _init_subscribers(self):
 
-        # self.hpe_3d_sub  = rospy.Subscriber("camera/color/image_raw", Image, self.hpe3d_cb, queue_size=1)
-        self.hpe_3d_sub = rospy.Subscriber(HPE3D_PRED_TOPIC_NAME, hpe_msg_type, self.hpe3d_cb, queue_size=1)
+        # Pose msgs
+        self.vr_pos_lw_sub = rospy.Subscriber(VR_POS_LW_TOPIC_NAME, Pose, self.hpe3d_cb, queue_size=1)
+        self.vr_pos_rw_sub = rospy.Subscriber(VR_POS_RW_TOPIC_NAME, Pose, self.hpe3d_cb, queue_size=1)ž
+        self.vr_pos_head_sub = rospy.Subscriber(VR_POS_HEAD_TOPIC_NAME, Pose, self.hpe3d_cb, queue_size=1)
+        # Twist msgs
+        self.vr_twist_rw_cb = rospy.Subscriber(VR_TWIST_RW_TOPIC_NAME, Twist, self.hpe3d_cb, queue_size=1)
+        self.vr_twist_lw_sub = rospy.Subscriber(VR_TWIST_LW_TOPIC_NAME, Twist, self.hpe3d_cb, queue_size=1)
+        self.vr_twist_head_sub = rospy.Subscriber(VR_TWIST_HEAD_TOPIC_NAME, Twist, self.hpe3d_cb, queue_size=1)
+        # Uav msgs
         self.pos_sub = rospy.Subscriber(UAV_POS_TOPIC_NAME, PoseStamped, self.pos_cb, queue_size=1)
 
     def _init_publishers(self):
 
-        # self.q_pos_cmd_pub = rospy.Publisher("")
         # TODO: Add publisher for publishing joint angles
         # CMD publishers
         # Publish commands :)
@@ -96,18 +93,29 @@ class hpe2uavcmd():
         self.cb_point_marker_pub = rospy.Publisher("ctl/cb_point", Marker, queue_size=1)    
         self.r_hand_normal = rospy.Publisher("ctl/r_hand_normal", Vector3, queue_size=1)
 
-    def hpe3d_cb(self, msg):
-        rospy.loginfo_once("Recieved HPE3D message")
-        self.hpe3d_msg = HumanPose3D()
-        self.hpe3d_msg = msg
-        self.hpe3d_recv = True
+    def vr_pos_lw_cb(self, msg):
+        self.p_lw = pointToArray(msg)
+        #self.R_lw = quatToRot(msg.orientation)
 
-    def hand3d_cb(self, msg): 
-        rospy.loginfo_once("Recieved Hand3D message")
-        self.hand3d_msg = HandPose3D()
-        self.hand3d_msg = msg
-        self.hand3d_recv = True
-        # Orientation of the hand # Check STACKOVERFLOW
+    def vr_pos_rw_cb(self, msg): 
+        self.p_rw = pointToArray(msg)
+        #self.R_rw = quatToRot(msg.orientation)
+
+    def vr_twist_lw_cb(self, msg):
+        self.v_lw = pointToArray(msg)
+        #self.Rdot_lw = quatToRot(msg.orientation)
+
+    def vr_twist_rw_cb(self, msg):
+        self.v_rw = pointToArray(msg)
+        #self.Rdot_rw = quatToRot(msg.orientation)
+
+    def vr_pos_head_cb(self, msg):
+        self.p_h = pointToArray(msg)
+        self.R_h = quatToRot(msg.orientation)
+
+
+    def vr_twist_head_cb(self):
+        pass
 
     def pos_cb(self, msg):
 
@@ -146,66 +154,29 @@ class hpe2uavcmd():
             self.calib_point.z = sum(z)/len(z)
             rospy.loginfo("Calibration point is: {}".format(self.calib_point))
             return True
-
-    def create_marker(self, shape, px, py, pz, dist_x, dist_y, dist_z): 
-        marker = Marker()
-        marker.header.frame_id = "n_thorax"
-        marker.header.stamp = rospy.Time().now()
-        marker.ns = "arrow"
-        marker.id = 0
-        marker.type = shape
-        marker.action = Marker.ADD
-        marker.pose.position.x = self.calib_point.x
-        marker.pose.position.y = self.calib_point.y
-        marker.pose.position.z = self.calib_point.z
-        # How to transform x,y,z values to the orientation 
-        marker.pose.orientation.x = 0.0
-        marker.pose.orientation.y = 0.0
-        marker.pose.orientation.z = 0.0
-        marker.pose.orientation.w = 1.0
-        marker.scale.x = 0.25
-        marker.scale.y = 0.25
-        marker.scale.z = 0.25
-        marker.color.a = 1.0
-        marker.color.r = 0.0
-        marker.color.g = 1.0
-        return marker
     
-    def proc_hpe_est(self):
+    def proc_vr(self):
         try:
 
             # TODO: Get torso coordinate frame [move this to a method]
-            # TODO: Compare this to the online estimation of the HPE by openpose
-            c_d_ls = pointToArray(self.hpe3d_msg.l_shoulder)
-            c_d_rs = pointToArray(self.hpe3d_msg.r_shoulder)
-            #c_d_t  = pointToArray(self.hpe3d_msg.neck)
-            c_d_n  = pointToArray(self.hpe3d_msg.nose)
-            c_d_le = pointToArray(self.hpe3d_msg.l_elbow)
-            c_d_re = pointToArray(self.hpe3d_msg.r_elbow)
-            c_d_rw = pointToArray(self.hpe3d_msg.r_wrist)
             c_d_lw = pointToArray(self.hpe3d_msg.l_wrist)
+            c_d_rw = pointToArray(self.hpe3d_msg.r_wrist)
 
             # Comented out OpenPose part
-            cD = np.array([#create_homogenous_vector(c_d_t),
-                           create_homogenous_vector(c_d_ls), 
-                           create_homogenous_vector(c_d_rs), 
-                           create_homogenous_vector(c_d_le), 
-                           create_homogenous_vector(c_d_re), 
-                           create_homogenous_vector(c_d_rw),
+            cD = np.array([create_homogenous_vector(c_d_rw), 
                            create_homogenous_vector(c_d_lw)])
 
-         
             # thorax in the camera frame --> TODO: Fix transformations
-            T = create_homogenous_matrix(self.bRc, np.zeros(3))
+            T = create_homogenous_matrix(self.bRvc, np.zeros(3))
             # T_inv = np.linalg.inv(T)
             # This seems like ok transformation for beginning :) 
             bD = np.matmul(T, cD.T).T
             # This is in the coordinate frame of the camera
             self.bD = bD
             # Right wrist in the body frame
-            self.b_d_rw = np.matmul(self.bRc, c_d_rw) #- c_d_n) 
+            self.b_d_lw = np.matmul(self.bRc, c_d_lw) #- c_d_n) 
             # Left wrist in the body frame
-            self.b_d_lw = np.matmul(self.bRc, c_d_lw) #- c_d_n)
+            self.b_d_rw = np.matmul(self.bRc, c_d_rw) #- c_d_n)
             #self.publishMarkerArray(bD)             
 
             #torso_msg = self.packSimpleTorso3DMsg(bD)
@@ -267,6 +238,7 @@ class hpe2uavcmd():
         self.marker_pub.publish(arrowMsg)
         self.first = False
 
+    # TODO: Move this to the separate methods
     def generate_cmd(self, sx, sy, sz):
         pos_ref = PoseStamped()
         if self.first:
@@ -313,7 +285,7 @@ class hpe2uavcmd():
             # Multiple conditions neccessary to run program!
             run_ready = self.hpe3d_recv
             calib_duration = 10
-            self.proc_hpe_est()
+            self.proc_vr()
         
             # First run condition
             if run_ready and not calibrated:
@@ -338,5 +310,5 @@ class hpe2uavcmd():
 
 
 if __name__ == "__main__":
-    hpe2uavcmd_ = hpe2uavcmd(sys.argv[1])
-    hpe2uavcmd_.run()
+    vr2uavcmd_ = vr2uavcmd(sys.argv[1])
+    vr2uavcmd_.run()

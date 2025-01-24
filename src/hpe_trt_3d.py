@@ -22,6 +22,7 @@ import sensor_msgs.point_cloud2 as pc2
 
 # Import all methods from utils
 from utils import *
+from linalg_utils import get_RotX, get_RotY, get_RotZ   
 
 from input_remapping import createOmatrix, createUmatrix, tfU2Vect3, tfU2Pose
 
