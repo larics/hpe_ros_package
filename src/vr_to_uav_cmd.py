@@ -177,7 +177,47 @@ class vr2uavcmd():
         except Exception as e:
             rospy.logwarn("Failed to generate or publish HPE3d message: {}".format(e))
 
-    # TODO: Write it as a matrix because this is horrendous
+    # TODO: Move this to the separate methods 
+    def generate_cmd(self, sx, sy, sz):
+        pos_ref = PoseStamped()
+        if self.first:
+            pos_ref.pose.position = self.currentPose.pose.position
+            pos_ref.pose.orientation = self.currentPose.pose.orientation
+        else: 
+            pos_ref.pose.position.x = self.prev_pose_ref.pose.position.x + sx * self.b_cmd.x
+            pos_ref.pose.position.y = self.prev_pose_ref.pose.position.y + sy * self.b_cmd.y
+            pos_ref.pose.position.z = self.prev_pose_ref.pose.position.z + sz * self.b_cmd.z
+            pos_ref.pose.orientation = self.prev_pose_ref.pose.orientation
+
+        trajPt = MultiDOFJointTrajectoryPoint()
+        if CTL_TYPE == "POSITION":
+            # Generate MultiDOFJointTrajectory
+            trajPt.transforms.append(Transform())
+            trajPt.transforms[0].translation.x = pos_ref.pose.position.x
+            trajPt.transforms[0].translation.y = pos_ref.pose.position.y
+            trajPt.transforms[0].translation.z = pos_ref.pose.position.z
+            trajPt.transforms[0].rotation = pos_ref.pose.orientation
+            trajPt.velocities.append(getZeroTwist())
+            trajPt.accelerations.append(getZeroTwist())
+
+        if CTL_TYPE == "RATE": 
+            trajPt.transforms.append(getZeroTransform())
+            trajPt.transforms[0].translation.x = pos_ref.pose.position.x
+            trajPt.transforms[0].translation.y = pos_ref.pose.position.y
+            trajPt.transforms[0].translation.z = pos_ref.pose.position.z
+            trajPt.transforms[0].rotation = pos_ref.pose.orientation
+            trajPt.velocities.append(getZeroTwist())
+            trajPt.velocities[0].linear.x = self.b_cmd.x
+            trajPt.velocities[0].linear.y = self.b_cmd.y
+            trajPt.velocities[0].linear.z = self.b_cmd.z
+            trajPt.velocities[0].angular.x = 0
+            trajPt.velocities[0].angular.y = 0
+            trajPt.velocities[0].angular.z = 0
+            trajPt.accelerations.append(getZeroTwist())
+        return trajPt
+    
+        # TODO: Write it as a matrix because this is horrendous
+
     def run_ctl(self, r, R):
         
         # Calc pos r 
@@ -231,44 +271,6 @@ class vr2uavcmd():
         self.marker_pub.publish(arrowMsg)
         self.first = False
 
-    # TODO: Move this to the separate methods
-    def generate_cmd(self, sx, sy, sz):
-        pos_ref = PoseStamped()
-        if self.first:
-            pos_ref.pose.position = self.currentPose.pose.position
-            pos_ref.pose.orientation = self.currentPose.pose.orientation
-        else: 
-            pos_ref.pose.position.x = self.prev_pose_ref.pose.position.x + sx * self.b_cmd.x
-            pos_ref.pose.position.y = self.prev_pose_ref.pose.position.y + sy * self.b_cmd.y
-            pos_ref.pose.position.z = self.prev_pose_ref.pose.position.z + sz * self.b_cmd.z
-            pos_ref.pose.orientation = self.prev_pose_ref.pose.orientation
-
-        trajPt = MultiDOFJointTrajectoryPoint()
-        if CTL_TYPE == "POSITION":
-            # Generate MultiDOFJointTrajectory
-            trajPt.transforms.append(Transform())
-            trajPt.transforms[0].translation.x = pos_ref.pose.position.x
-            trajPt.transforms[0].translation.y = pos_ref.pose.position.y
-            trajPt.transforms[0].translation.z = pos_ref.pose.position.z
-            trajPt.transforms[0].rotation = pos_ref.pose.orientation
-            trajPt.velocities.append(getZeroTwist())
-            trajPt.accelerations.append(getZeroTwist())
-
-        if CTL_TYPE == "RATE": 
-            trajPt.transforms.append(getZeroTransform())
-            trajPt.transforms[0].translation.x = pos_ref.pose.position.x
-            trajPt.transforms[0].translation.y = pos_ref.pose.position.y
-            trajPt.transforms[0].translation.z = pos_ref.pose.position.z
-            trajPt.transforms[0].rotation = pos_ref.pose.orientation
-            trajPt.velocities.append(getZeroTwist())
-            trajPt.velocities[0].linear.x = self.b_cmd.x
-            trajPt.velocities[0].linear.y = self.b_cmd.y
-            trajPt.velocities[0].linear.z = self.b_cmd.z
-            trajPt.velocities[0].angular.x = 0
-            trajPt.velocities[0].angular.y = 0
-            trajPt.velocities[0].angular.z = 0
-            trajPt.accelerations.append(getZeroTwist())
-        return trajPt
 
     def run(self):
 
