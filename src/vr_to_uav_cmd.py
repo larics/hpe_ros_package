@@ -13,19 +13,14 @@ from geometry_msgs.msg import PoseStamped, Pose, Transform, Twist
 from visualization_msgs.msg import Marker
 from trajectory_msgs.msg import MultiDOFJointTrajectoryPoint
 
-from linalg_utils import pointToArray, create_homogenous_vector, create_homogenous_matrix, get_RotX, get_RotY, get_RotZ, getZeroTwist, getZeroTransform
-
-
-# TODO:
-# - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
-# - Read camera_info
-# - add painting of a z measurements
+from linalg_utils import pointToArray, create_homogenous_vector, create_homogenous_matrix, get_RotX, get_RotY, get_RotZ
+from utils import getZeroTwist, getZeroTransform
 
 UAV_CMD_TOPIC_NAME = "/red/tracker/input_pose"
 UAV_POS_TOPIC_NAME = "/red/pose"
 TRAJ_CMD_TOPIC_NAME = "/red/position_hold/trajectory"
 
-CTL_TYPE = "POSITION" # RATE 
+CTL_TYPE = "POSITION" 
 CTL_TYPE = "RATE"
 
 VR_POS_LW_TOPIC_NAME = "/vr/pos/lw"
@@ -34,7 +29,6 @@ VR_TWIST_LW_TOPIC_NAME = "/vr/twist/lw"
 VR_TWIST_RW_TOPIC_NAME = "/vr/twist/rw"
 VR_POS_HEAD_TOPIC_NAME = "/vr/pos/head"
 VR_TWIST_HEAD_TOPIC_NAME = "/vr/twist/head"
-
 
 class vr2uavcmd():
 
@@ -65,7 +59,6 @@ class vr2uavcmd():
 
         # body in the camera coordinate frame (T to move to the coordiante frame)
         self.bRvc = np.matmul(get_RotX(np.pi/2), get_RotY(np.pi/2))
-
 
     def _init_subscribers(self):
 
@@ -111,11 +104,11 @@ class vr2uavcmd():
 
     def vr_pos_head_cb(self, msg):
         self.p_h = pointToArray(msg)
-        self.R_h = quatToRot(msg.orientation)
+        #self.R_h = quatToRot(msg.orientation)
 
-
-    def vr_twist_head_cb(self):
-        pass
+    def vr_twist_head_cb(self, msg):
+        self.v_h = pointToArray(msg)
+        #self.Rdot_h = quatToRot(msg.orientation)
 
     def pos_cb(self, msg):
 
@@ -306,7 +299,6 @@ class vr2uavcmd():
 
 
             self.rate.sleep()
-
 
 
 if __name__ == "__main__":
