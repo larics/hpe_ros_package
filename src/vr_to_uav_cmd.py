@@ -16,12 +16,12 @@ from trajectory_msgs.msg import MultiDOFJointTrajectoryPoint
 from linalg_utils import pointToArray, create_homogenous_vector, create_homogenous_matrix, get_RotX, get_RotY, get_RotZ
 from utils import getZeroTwist, getZeroTransform
 
+CTL_TYPE = "POSITION" 
+CTL_TYPE = "RATE"
+
 UAV_CMD_TOPIC_NAME = "/red/tracker/input_pose"
 UAV_POS_TOPIC_NAME = "/red/pose"
 TRAJ_CMD_TOPIC_NAME = "/red/position_hold/trajectory"
-
-CTL_TYPE = "POSITION" 
-CTL_TYPE = "RATE"
 
 VR_POS_LW_TOPIC_NAME = "/vr/pos/lw"
 VR_POS_RW_TOPIC_NAME = "/vr/pos/rw"
@@ -63,13 +63,13 @@ class vr2uavcmd():
     def _init_subscribers(self):
 
         # Pose msgs
-        self.vr_pos_lw_sub = rospy.Subscriber(VR_POS_LW_TOPIC_NAME, Pose, self.hpe3d_cb, queue_size=1)
-        self.vr_pos_rw_sub = rospy.Subscriber(VR_POS_RW_TOPIC_NAME, Pose, self.hpe3d_cb, queue_size=1)ž
-        self.vr_pos_head_sub = rospy.Subscriber(VR_POS_HEAD_TOPIC_NAME, Pose, self.hpe3d_cb, queue_size=1)
+        self.vr_pos_lw_sub = rospy.Subscriber(VR_POS_LW_TOPIC_NAME, Pose, self.vr_pos_lw_cb, queue_size=1)
+        self.vr_pos_rw_sub = rospy.Subscriber(VR_POS_RW_TOPIC_NAME, Pose, self.vr_pos_rw_cb, queue_size=1)
+        self.vr_pos_head_sub = rospy.Subscriber(VR_POS_HEAD_TOPIC_NAME, Pose, self.vr_pos_head_cb, queue_size=1)
         # Twist msgs
-        self.vr_twist_rw_cb = rospy.Subscriber(VR_TWIST_RW_TOPIC_NAME, Twist, self.hpe3d_cb, queue_size=1)
-        self.vr_twist_lw_sub = rospy.Subscriber(VR_TWIST_LW_TOPIC_NAME, Twist, self.hpe3d_cb, queue_size=1)
-        self.vr_twist_head_sub = rospy.Subscriber(VR_TWIST_HEAD_TOPIC_NAME, Twist, self.hpe3d_cb, queue_size=1)
+        self.vr_twist_rw_cb = rospy.Subscriber(VR_TWIST_RW_TOPIC_NAME, Twist, self.vr_twist_rw_cb, queue_size=1)
+        self.vr_twist_lw_sub = rospy.Subscriber(VR_TWIST_LW_TOPIC_NAME, Twist, self.vr_twist_lw_cb, queue_size=1)
+        self.vr_twist_head_sub = rospy.Subscriber(VR_TWIST_HEAD_TOPIC_NAME, Twist, self.vr_twist_head_cb, queue_size=1)
         # Uav msgs
         self.pos_sub = rospy.Subscriber(UAV_POS_TOPIC_NAME, PoseStamped, self.pos_cb, queue_size=1)
 

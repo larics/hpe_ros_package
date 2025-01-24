@@ -18,7 +18,7 @@ from geometry_msgs.msg import Vector3
 from hpe_ros_msgs.msg import TorsoJointPositions, HumanPose2D, HandPose2D, HumanPose3D, HandPose3D
 from ros_openpose_msgs.msg import Frame
 from visualization_msgs.msg import MarkerArray, Marker
-
+from linalg_utils import get_RotX, get_RotY, get_RotZ, create_homogenous_matrix, create_homogenous_vector, pointToArray
 import message_filters
 
 import sensor_msgs.point_cloud2 as pc2
@@ -385,7 +385,6 @@ class HPE2Dto3D():
 
             self.rate.sleep()
 
-
 def convert_pose_predictions_to_dict(predictions):
 
     # Initialize the dictionary with empty lists
@@ -398,38 +397,7 @@ def convert_pose_predictions_to_dict(predictions):
         result['z'].append((t[2],))
     return result
 
-def create_homogenous_vector(v): 
-    return np.array([v[0], v[1], v[2], 1])
 
-# Create Rotation 
-def create_homogenous_matrix(R, t):
-    T = np.hstack((R, t.reshape(3, 1)))
-    T = np.vstack((T, np.array([0, 0, 0, 1])))
-    return T
-
-def get_RotX(angle): # 
-    
-    RX = np.array([[1, 0, 0], 
-                   [0, np.cos(angle), -np.sin(angle)], 
-                   [0, np.sin(angle), np.cos(angle)]])    
-    return RX
-
-def get_RotY(angle): 
-    
-    RY = np.array([[np.cos(angle), 0, np.sin(angle)], 
-                   [0, 1, 0], 
-                   [-np.sin(angle), 0, np.cos(angle)]])
-    return RY
-    
-def get_RotZ(angle): 
-    
-    RZ = np.array([[np.cos(angle), -np.sin(angle), 0],
-                   [np.sin(angle), np.cos(angle), 0], 
-                   [ 0, 0, 1]] )
-    return RZ
-
-def pointToArray(msg): 
-    return np.array([msg.x, msg.y, msg.z])
 
 if __name__ == "__main__": 
     hpe3D = HPE2Dto3D(sys.argv[1], sys.argv[2])
