@@ -282,7 +282,7 @@ class hpe2uavcmd():
             pos_ref.pose.position = self.currentPose.pose.position
             pos_ref.pose.orientation = self.currentPose.pose.orientation
         else: 
-            type_ = "GLOBAL"
+            type_ = "LOCAL"
             if type_ == "LOCAL":
                 b_cmd = np.matmul(self.currRot, np.array([self.b_cmd.x, 
                                                                          self.b_cmd.y,
