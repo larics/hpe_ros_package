@@ -29,6 +29,8 @@ import sensor_msgs.point_cloud2 as pc2
 # - Record bag of l shoulder, r shoulder and rest of the body parts 
 # - Compare results 
 
+USE_HANDS = False
+
 class HPE2Dto3D(): 
 
     def __init__(self, freq, openpose):
@@ -59,7 +61,7 @@ class HPE2Dto3D():
         
         # If use hands, parse them from frame 
         # use hands could be part of the tmuxinator config? 
-        self.use_hands = True
+        self.use_hands = USE_HANDS
         self.r_hand_predictions, self.l_hand_predictions = [], []
 
         if self.openpose: 
@@ -124,7 +126,7 @@ class HPE2Dto3D():
             #self.predictions_sub    = message_filters.Subscriber("/hpe_2d", Frame)
             self.depth_sub          = message_filters.Subscriber("/camera/depth/color/points", PointCloud2)
             # Doesn't matter! 
-            self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 30)
+            self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 5)
             self.ats.registerCallback(self.frame_pcl_cb)
 
         else: 
@@ -360,7 +362,7 @@ class HPE2Dto3D():
                     self.rgbd_hpe3d_pub.publish(rgbd_hpe3d_msg)
                     self.openpose_hpe3d_pub.publish(openpose_hpe3d_msg)
 
-                self.use_hands = True
+                self.use_hands = False
                 if self.use_hands:
                     self.proc_hand_pose_est()
                 

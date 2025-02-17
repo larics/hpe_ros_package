@@ -22,10 +22,11 @@ from linalg_utils import pointToArray, get_RotX, get_RotY, get_RotZ, create_homo
 
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
-# - Read camera_info
+# - Read camera_infoWWWWWWW
 # - add painting of a z measurements
 
 # Constants
+# TODO: Set as launch file argument
 HPE = "OPENPOSE"
 UAV_CMD_TOPIC_NAME = "/red/tracker/input_pose"
 UAV_POS_TOPIC_NAME = "/red/pose"
@@ -69,9 +70,10 @@ class hpe2uavcmd():
         self.first = True
         rospy.loginfo("[Hpe3D] started!")   
 
+        # TODO: How to move to a body frame (any movement of my hand should be in the body frame)
         if HPE == "OPENPOSE":
             # body in the camera coordinate frame 
-            self.bRc = np.matmul(get_RotX(np.pi/2), get_RotY(np.pi/2))
+            self.bRc = np.matmul(get_RotZ(np.pi), np.matmul(get_RotX(np.pi/2), get_RotY(np.pi/2)))
         if HPE == "MPI": 
             # body in the camera coordinate frame 
             self.bRc = get_RotY(np.pi)
@@ -141,9 +143,9 @@ class hpe2uavcmd():
             y = [p[1] for p in self.p_list][n:]
             z = [p[2] for p in self.p_list][n:]
             self.calib_point = Vector3()
-            self.calib_point.x = sum(x)/len(x)
-            self.calib_point.y = sum(y)/len(y)
-            self.calib_point.z = sum(z)/len(z)
+            self.calib_point.x = np.median(x)
+            self.calib_point.y = np.median(y)
+            self.calib_point.z = np.median(z)
             rospy.loginfo("Calibration point is: {}".format(self.calib_point))
             return True
 
@@ -178,6 +180,7 @@ class hpe2uavcmd():
             # TODO: Compare this to the online estimation of the HPE by openpose
             c_d_ls = pointToArray(self.hpe3d_msg.l_shoulder)
             c_d_rs = pointToArray(self.hpe3d_msg.r_shoulder)
+            c_d_torso = (c_d_ls + c_d_rs)/2
             #c_d_t  = pointToArray(self.hpe3d_msg.neck)
             c_d_n  = pointToArray(self.hpe3d_msg.nose)
             c_d_le = pointToArray(self.hpe3d_msg.l_elbow)
@@ -185,8 +188,8 @@ class hpe2uavcmd():
             c_d_rw = pointToArray(self.hpe3d_msg.r_wrist)
             c_d_lw = pointToArray(self.hpe3d_msg.l_wrist)
 
-            # Comented out OpenPose part
-            cD = np.array([#create_homogenous_vector(c_d_t),
+            # Comented out OpenPose part ==> wrong nomenclature
+            Tc = np.array([#create_homogenous_vector(c_d_t),
                            create_homogenous_vector(c_d_ls), 
                            create_homogenous_vector(c_d_rs), 
                            create_homogenous_vector(c_d_le), 
@@ -196,17 +199,23 @@ class hpe2uavcmd():
 
          
             # thorax in the camera frame --> TODO: Fix transformations
-            T = create_homogenous_matrix(self.bRc, np.zeros(3))
+            T = create_homogenous_matrix(self.bRc, -np.matmul(self.bRc, c_d_torso))
             # T_inv = np.linalg.inv(T)
             # This seems like ok transformation for beginning :) 
-            bD = np.matmul(T, cD.T).T
+            bTc = np.matmul(T, Tc.T).T
             # This is in the coordinate frame of the camera
-            self.bD = bD
+            self.bD = bTc
             # Right wrist in the body frame
-            self.b_d_rw = np.matmul(self.bRc, c_d_rw) #- c_d_n) 
+            # self.b_d_rw = np.matmul(self.bRc, c_d_rw) #- c_d_n) 
             # Left wrist in the body frame
-            self.b_d_lw = np.matmul(self.bRc, c_d_lw) #- c_d_n)
-            #self.publishMarkerArray(bD)             
+            # self.b_d_lw = np.matmul(self.bRc, c_d_lw) #- c_d_n)
+            #self.publishMarkerArray(bD)
+            # rospy.loginfo(f"bTC is {bTc}")
+            self.b_d_rw = bTc[-2] # added substraction by c_d_torso because it is already included in the bD
+            self.b_d_lw = bTc[-1] 
+            #rospy.loginfo(f"b_d_rw: {self.b_d_rw}")
+            #rospy.loginfo(f"b_d_lw: {self.b_d_lw}")
+
 
             #torso_msg = self.packSimpleTorso3DMsg(bD)
             #self.upper_body_3d_pub.publish(torso_msg)
@@ -318,6 +327,7 @@ class hpe2uavcmd():
             # First run condition
             if run_ready and not calibrated:
                 calibrated = self.calibrate(calib_duration)
+                rospy.loginfo(f"b_d_rw: f{self.b_d_rw}")
 
             # We can start control if we have calibrated point
             if run_ready and calibrated:
