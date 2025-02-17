@@ -7,6 +7,7 @@ import rospy
 import tf
 import numpy as np
 import copy
+from scipy.spatial.transform import Rotation
 
 from std_msgs.msg import Float64MultiArray, Float32
 from geometry_msgs.msg import Vector3
@@ -41,7 +42,7 @@ if HPE == "MPI":
     hpe_msg_type=MpHumanPose3D
 
 CTL_TYPE = "POSITION" # RATE 
-CTL_TYPE = "RATE"
+#CTL_TYPE = "RATE"
 
 class hpe2uavcmd():
 
@@ -120,6 +121,7 @@ class hpe2uavcmd():
         self.currentPose.pose.position.y = msg.pose.position.y
         self.currentPose.pose.position.z = msg.pose.position.z
         self.currentPose.pose.orientation = msg.pose.orientation
+        self.currRot = Rotation.from_quat([self.currentPose.pose.orientation.x, self.currentPose.pose.orientation.y, self.currentPose.pose.orientation.z, self.currentPose.pose.orientation.w]).as_matrix()
 
     def calibrate(self, timeout):
 
@@ -226,9 +228,9 @@ class hpe2uavcmd():
     def run_ctl(self, r, R):
         
         # Calc pos r 
-        dist_x = (self.calib_point.x - self.b_d_rw[0])
-        dist_y = (self.calib_point.y - self.b_d_rw[1]) 
-        dist_z = (self.calib_point.z - self.b_d_rw[2]) 
+        dist_x = self.b_d_rw[0] - self.calib_point.x 
+        dist_y = self.b_d_rw[1] - self.calib_point.y  
+        dist_z = -(self.b_d_rw[2] - self.calib_point.z)
 
         self.body_ctl = Pose()
         self.b_cmd = Vector3()
@@ -236,23 +238,21 @@ class hpe2uavcmd():
 
         # TODO: Check this as vect
         if R > abs(dist_x) > r:
-            rospy.logdebug("X: {}".format(dist_x))
             self.b_cmd.x = dist_x
         else:
             self.b_cmd.x = 0
 
         if R > abs(dist_y) > r:
-            rospy.logdebug("Y: {}".format(dist_y))
             self.b_cmd.y = dist_y
         else:
             self.b_cmd.y = 0
 
         if R > abs(dist_z) > r:
-            rospy.logdebug("Z: {}".format(dist_z))
             self.b_cmd.z = dist_z
         else:
             self.b_cmd.z = 0
-            
+        
+        rospy.logdebug("X: {}\t Y: {}\t Z: {}\t".format(self.b_cmd.x, self.b_cmd.y, self.b_cmd.z))
         # TODO: Move to roslaunch params
         scaling_x = 0.05; scaling_y = 0.05; scaling_z = 0.05;
 
@@ -282,10 +282,18 @@ class hpe2uavcmd():
             pos_ref.pose.position = self.currentPose.pose.position
             pos_ref.pose.orientation = self.currentPose.pose.orientation
         else: 
+            type_ = "GLOBAL"
+            if type_ == "LOCAL":
+                b_cmd = np.matmul(self.currRot, np.array([self.b_cmd.x, 
+                                                                         self.b_cmd.y,
+                                                                         self.b_cmd.z]))
+                self.b_cmd = Vector3(b_cmd[0], b_cmd[1], b_cmd[2])
+            
             pos_ref.pose.position.x = self.prev_pose_ref.pose.position.x + sx * self.b_cmd.x
             pos_ref.pose.position.y = self.prev_pose_ref.pose.position.y + sy * self.b_cmd.y
             pos_ref.pose.position.z = self.prev_pose_ref.pose.position.z + sz * self.b_cmd.z
             pos_ref.pose.orientation = self.prev_pose_ref.pose.orientation
+
 
         trajPt = MultiDOFJointTrajectoryPoint()
         if CTL_TYPE == "POSITION":
@@ -332,7 +340,7 @@ class hpe2uavcmd():
             # We can start control if we have calibrated point
             if run_ready and calibrated:
                 r_ = 0.05
-                R_ = 0.15 
+                R_ = 0.25 
                 # Deadzone is 
                 self.run_ctl(r_, R_)
                 
