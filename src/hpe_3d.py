@@ -29,7 +29,7 @@ import sensor_msgs.point_cloud2 as pc2
 # - Record bag of l shoulder, r shoulder and rest of the body parts 
 # - Compare results 
 
-USE_HANDS = False
+USE_HANDS = True
 
 class HPE2Dto3D(): 
 
@@ -101,6 +101,7 @@ class HPE2Dto3D():
                               9: "middle0", 10: "middle1", 11: "middle2", 12: "middle3",
                               13: "ring0", 14: "ring1", 15: "ring2", 16: "ring3",
                               17: "pinky0", 18: "pinky1", 19: "pinky2", 20: "pinky3"}
+        
         
         # self.indexing = different indexing depending on weights that are used!
         if self.mpii: self.indexing = self.mpii_indexing
@@ -356,13 +357,13 @@ class HPE2Dto3D():
                 rospy.loginfo_throttle(30, "Publishing 3D pose of the human!")
                 t_s = rospy.Time.now().to_sec()
 
-                self.use_hpe = True
+                self.use_hpe = USE_HANDS
                 if self.use_hpe:
                     rgbd_hpe3d_msg, openpose_hpe3d_msg = self.get_hpe3d(copy.deepcopy(self.predictions))
                     self.rgbd_hpe3d_pub.publish(rgbd_hpe3d_msg)
                     self.openpose_hpe3d_pub.publish(openpose_hpe3d_msg)
 
-                self.use_hands = False
+                self.use_hands = USE_HANDS
                 if self.use_hands:
                     self.proc_hand_pose_est()
                 
