@@ -362,3 +362,93 @@ def createMarker(now, v, i):
     m_.pose.orientation.z = 0
     m_.pose.orientation.w = 1
     return m_
+
+# TODO: Make this better 4 sure
+def create_marker_wth_starting_pt(now, shape, start_p, dist_x, dist_y, dist_z): 
+    marker = Marker()
+    marker.header.frame_id = "n_thorax"
+    marker.header.stamp = now
+    marker.ns = "arrow"
+    marker.id = 0
+    marker.type = shape
+    marker.action = Marker.ADD
+    marker.pose.position.x = start_p.x
+    marker.pose.position.y = start_p.y
+    marker.pose.position.z = start_p.z
+    # How to transform x,y,z values to the orientation 
+    marker.pose.orientation.x = 0.0
+    marker.pose.orientation.y = 0.0
+    marker.pose.orientation.z = 0.0
+    marker.pose.orientation.w = 1.0
+    marker.scale.x = dist_x
+    marker.scale.y = dist_y
+    marker.scale.z = dist_z
+    marker.color.a = 1.0
+    marker.color.r = 0.0
+    marker.color.g = 1.0
+    return marker
+
+def createMarkerArrow(stamp, start_point, end_point, i, color=(255, 0, 0)):
+    m_ = Marker()
+    m_.header.frame_id = "camera_color_frame"
+    m_.header.stamp = stamp
+    m_.type = m_.ARROW
+    m_.id = i
+    m_.action = m_.ADD
+    m_.scale.x = 0.02  # shaft diameter
+    m_.scale.y = 0.1  # head diameter
+    m_.scale.z = 0.1  # head length
+    m_.color.a = 1.0
+    m_.color.r = color[0]
+    m_.color.g = color[1]
+    m_.color.b = color[2]
+    pt1 = Point()
+    pt2 = Point()
+    pt1.x = start_point[0]
+    pt1.y = start_point[1]
+    pt1.z = start_point[2]
+    pt2.x = end_point[0]
+    pt2.y = end_point[1]
+    pt2.z = end_point[2]
+    m_.points.append(pt1)
+    m_.points.append(pt2)
+    return m_
+
+# Gen hand normal
+def gen_hand_normal(thumb, wrist, index, pinky): 
+    # For left hand
+    t = np.array([thumb.x, thumb.y, thumb.z])
+    w = np.array([wrist.x, wrist.y, wrist.z])
+    i = np.array([index.x, index.y, index.z])
+    p = np.array([pinky.x, pinky.y, pinky.z])
+
+    vt = t - w;         
+    norm_vt = np.linalg.norm(vt); 
+    if norm_vt != 0:
+        vt_ = vt / norm_vt
+    
+    vi = i - w; 
+    norm_vi = np.linalg.norm(vi)
+    if norm_vi != 0: 
+        vi_ = vi / norm_vi
+    
+    vp = p - w; 
+    norm_vp = np.linalg.norm(vp)
+    if norm_vp != 0:
+        vp_ = vp / norm_vp
+
+    if norm_vt != 0 and norm_vi != 0: 
+        return np.cross(vt_, vi_)
+    
+    else: 
+        return np.array([0, 0, 0])
+
+# Calc body cmd
+def calc_body_cmd(r, R, d): 
+    if r < np.linalg.norm(d) < R:
+        return Vector3(d[0], d[1], d[2])
+    else:
+        return Vector3(0, 0, 0)
+    
+def VectToList(vect): 
+    return [vect.x, vect.y, vect.z]

@@ -18,7 +18,7 @@ from geometry_msgs.msg import Vector3
 from hpe_ros_msgs.msg import TorsoJointPositions, HumanPose2D, HandPose2D, HumanPose3D, HandPose3D
 from ros_openpose_msgs.msg import Frame
 from visualization_msgs.msg import MarkerArray, Marker
-
+from linalg_utils import get_RotX, get_RotY, get_RotZ, create_homogenous_matrix, create_homogenous_vector, pointToArray
 import message_filters
 
 import sensor_msgs.point_cloud2 as pc2
@@ -28,6 +28,9 @@ import sensor_msgs.point_cloud2 as pc2
 # - add painting of a z measurements  
 # - Record bag of l shoulder, r shoulder and rest of the body parts 
 # - Compare results 
+
+USE_HPE = True
+USE_HANDS = False
 
 class HPE2Dto3D(): 
 
@@ -59,7 +62,7 @@ class HPE2Dto3D():
         
         # If use hands, parse them from frame 
         # use hands could be part of the tmuxinator config? 
-        self.use_hands = True
+        self.use_hands = USE_HANDS
         self.r_hand_predictions, self.l_hand_predictions = [], []
 
         if self.openpose: 
@@ -100,6 +103,7 @@ class HPE2Dto3D():
                               13: "ring0", 14: "ring1", 15: "ring2", 16: "ring3",
                               17: "pinky0", 18: "pinky1", 19: "pinky2", 20: "pinky3"}
         
+        
         # self.indexing = different indexing depending on weights that are used!
         if self.mpii: self.indexing = self.mpii_indexing
         if self.coco: self.indexing = self.coco_indexing   
@@ -124,7 +128,7 @@ class HPE2Dto3D():
             #self.predictions_sub    = message_filters.Subscriber("/hpe_2d", Frame)
             self.depth_sub          = message_filters.Subscriber("/camera/depth/color/points", PointCloud2)
             # Doesn't matter! 
-            self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 30)
+            self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 5)
             self.ats.registerCallback(self.frame_pcl_cb)
 
         else: 
@@ -354,13 +358,13 @@ class HPE2Dto3D():
                 rospy.loginfo_throttle(30, "Publishing 3D pose of the human!")
                 t_s = rospy.Time.now().to_sec()
 
-                self.use_hpe = True
+                self.use_hpe = USE_HPE
                 if self.use_hpe:
                     rgbd_hpe3d_msg, openpose_hpe3d_msg = self.get_hpe3d(copy.deepcopy(self.predictions))
                     self.rgbd_hpe3d_pub.publish(rgbd_hpe3d_msg)
                     self.openpose_hpe3d_pub.publish(openpose_hpe3d_msg)
 
-                self.use_hands = True
+                self.use_hands = USE_HANDS
                 if self.use_hands:
                     self.proc_hand_pose_est()
                 
@@ -385,7 +389,6 @@ class HPE2Dto3D():
 
             self.rate.sleep()
 
-
 def convert_pose_predictions_to_dict(predictions):
 
     # Initialize the dictionary with empty lists
@@ -398,38 +401,7 @@ def convert_pose_predictions_to_dict(predictions):
         result['z'].append((t[2],))
     return result
 
-def create_homogenous_vector(v): 
-    return np.array([v[0], v[1], v[2], 1])
 
-# Create Rotation 
-def create_homogenous_matrix(R, t):
-    T = np.hstack((R, t.reshape(3, 1)))
-    T = np.vstack((T, np.array([0, 0, 0, 1])))
-    return T
-
-def get_RotX(angle): # 
-    
-    RX = np.array([[1, 0, 0], 
-                   [0, np.cos(angle), -np.sin(angle)], 
-                   [0, np.sin(angle), np.cos(angle)]])    
-    return RX
-
-def get_RotY(angle): 
-    
-    RY = np.array([[np.cos(angle), 0, np.sin(angle)], 
-                   [0, 1, 0], 
-                   [-np.sin(angle), 0, np.cos(angle)]])
-    return RY
-    
-def get_RotZ(angle): 
-    
-    RZ = np.array([[np.cos(angle), -np.sin(angle), 0],
-                   [np.sin(angle), np.cos(angle), 0], 
-                   [ 0, 0, 1]] )
-    return RZ
-
-def pointToArray(msg): 
-    return np.array([msg.x, msg.y, msg.z])
 
 if __name__ == "__main__": 
     hpe3D = HPE2Dto3D(sys.argv[1], sys.argv[2])

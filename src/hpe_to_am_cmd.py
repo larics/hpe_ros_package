@@ -7,48 +7,65 @@ import rospy
 import tf
 import numpy as np
 import copy
+import time
 from scipy.spatial.transform import Rotation
 
-from std_msgs.msg import Float64MultiArray, Float32
+# Messages
 from geometry_msgs.msg import Vector3
-from hpe_ros_msgs.msg import TorsoJointPositions
-from geometry_msgs.msg import PoseStamped, Pose, Transform
+from geometry_msgs.msg import PoseStamped, Pose, Transform, TwistStamped
 from visualization_msgs.msg import Marker
 from hpe_ros_msgs.msg import HumanPose3D, HandPose3D, MpHumanPose3D
-from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
+from trajectory_msgs.msg import MultiDOFJointTrajectoryPoint
 
-from utils import getZeroTwist, getZeroTransform
+# Service 
+from uam_ros_msgs.srv import changeState, changeStateRequest
+
+# Utils
+from utils import VectToList, getZeroTwist, getZeroTransform, createMarkerArrow, gen_hand_normal, calc_body_cmd
 from linalg_utils import pointToArray, get_RotX, get_RotY, get_RotZ, create_homogenous_vector, create_homogenous_matrix
 
 
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
-# - Read camera_infoWWWWWWW
+# - Read camera_info
 # - add painting of a z measurements
+# - Add stuff for recording data 
 
 # Constants
 # TODO: Set as launch file argument
+
+USE_HANDS = False
+
 HPE = "OPENPOSE"
 UAV_CMD_TOPIC_NAME = "/red/tracker/input_pose"
 UAV_POS_TOPIC_NAME = "/red/pose"
+ARM_CMD_TOPIC_NAME = "/control_arm/delta_twist_cmds"
 TRAJ_CMD_TOPIC_NAME = "/red/position_hold/trajectory"
 
 if HPE == "OPENPOSE":
     HPE3D_PRED_TOPIC_NAME = "/hpe3d/openpose_hpe3d"
-    hpe_msg_type=HumanPose3D
+    LHAND3D_PRED_TOPIC_NAME = "/hpe3d/lhand3d"
+    RHAND3D_PRED_TOPIC_NAME = "/hpe3d/rhand3d"
+    hpe_msg_type = HumanPose3D
+    hand_msg_type = HandPose3D
 
 if HPE == "MPI":
     HPE3D_PRED_TOPIC_NAME = "/mp_ros/loc/hpe3d"
-    hpe_msg_type=MpHumanPose3D
+    hpe_msg_type = MpHumanPose3D
+    # TODO: 
+    # Add MPI hand pose message type
 
 CTL_TYPE = "POSITION" # RATE 
 #CTL_TYPE = "RATE"
 
-class hpe2uavcmd():
+USCALE_X = 0.1; USCALE_Y = 0.1; USCALE_Z = 0.1
+ASCALE_X = 1.0; ASCALE_Y = 1.0; ASCALE_Z = 1.0
+
+class hpe2amcmd():
 
     def __init__(self, freq):
 
-        rospy.init_node("hpe2cmd", log_level=rospy.DEBUG)
+        rospy.init_node("hpe2cmd", log_level=rospy.INFO)
 
         self.rate = rospy.Rate(int(float(freq)))
 
@@ -56,11 +73,13 @@ class hpe2uavcmd():
         self.hpe3d_recv = False
         # Calibration vars
         self.calib_first = True
-        self.p_list = []
+        self.pr_list = []
+        self.pl_list = []
 
         # Initialize publishers and subscribers
         self._init_subscribers()
         self._init_publishers()
+        self._init_srvs()
 
         self.camera_frame_name = "camera_color_frame"
         # Initialize transform listener
@@ -68,6 +87,8 @@ class hpe2uavcmd():
         self.ntf_br = tf.TransformBroadcaster()
 
         self.prev_pose_ref = PoseStamped()
+        self.currentPose = PoseStamped()
+        self.currRot = np.eye(3)
         self.first = True
         rospy.loginfo("[Hpe3D] started!")   
 
@@ -84,20 +105,28 @@ class hpe2uavcmd():
         # self.hpe_3d_sub  = rospy.Subscriber("camera/color/image_raw", Image, self.hpe3d_cb, queue_size=1)
         self.hpe_3d_sub = rospy.Subscriber(HPE3D_PRED_TOPIC_NAME, hpe_msg_type, self.hpe3d_cb, queue_size=1)
         self.pos_sub = rospy.Subscriber(UAV_POS_TOPIC_NAME, PoseStamped, self.pos_cb, queue_size=1)
+        if USE_HANDS:
+            self.l_hand_3d_sub = rospy.Subscriber(LHAND3D_PRED_TOPIC_NAME, hand_msg_type, self.lhand3d_cb, queue_size=1)
+            self.r_hand_3d_sub = rospy.Subscriber(RHAND3D_PRED_TOPIC_NAME, hand_msg_type, self.rhand3d_cb, queue_size=1)
 
     def _init_publishers(self):
 
-        # self.q_pos_cmd_pub = rospy.Publisher("")
-        # TODO: Add publisher for publishing joint angles
         # CMD publishers
         # Publish commands :)
-        self.gen_r_pub = rospy.Publisher("/uav/pose_ref", Pose, queue_size=1)
+        self.gen_r_pub = rospy.Publisher("/uav/pose_ref", PoseStamped, queue_size=1)
         self.test_r_pub = rospy.Publisher("/uav/test_ref", Vector3, queue_size=1)
+        self.arm_pub = rospy.Publisher(ARM_CMD_TOPIC_NAME, TwistStamped, queue_size=10)        
         self.pos_pub = rospy.Publisher(UAV_CMD_TOPIC_NAME, PoseStamped, queue_size=1)
         self.traj_pub = rospy.Publisher(TRAJ_CMD_TOPIC_NAME, MultiDOFJointTrajectoryPoint, queue_size=1)
-        self.marker_pub = rospy.Publisher("ctl/viz", Marker, queue_size=1)
         self.cb_point_marker_pub = rospy.Publisher("ctl/cb_point", Marker, queue_size=1)    
-        self.r_hand_normal = rospy.Publisher("ctl/r_hand_normal", Vector3, queue_size=1)
+        self.r_hand_normal = rospy.Publisher("r_h_normal", Marker, queue_size=1)
+        self.l_hand_normal = rospy.Publisher("l_h_normal", Marker, queue_size=1)
+
+        # Check which marker to pub
+        # self.marker_pub = rospy.Publisher("ctl/viz", Marker, queue_size=1) 
+
+    def _init_srvs(self):
+        self.change_state_srv = rospy.ServiceProxy("/control_arm/change_state", changeState)
 
     def hpe3d_cb(self, msg):
         rospy.loginfo_once("Recieved HPE3D message")
@@ -105,12 +134,31 @@ class hpe2uavcmd():
         self.hpe3d_msg = msg
         self.hpe3d_recv = True
 
-    def hand3d_cb(self, msg): 
-        rospy.loginfo_once("Recieved Hand3D message")
-        self.hand3d_msg = HandPose3D()
-        self.hand3d_msg = msg
-        self.hand3d_recv = True
-        # Orientation of the hand # Check STACKOVERFLOW
+    def lhand3d_cb(self, msg): 
+        rospy.loginfo_once("Recieved L Hand3D message")
+        self.lhand3d_msg = HandPose3D()
+        self.lhand3d_msg = msg
+        self.lhand3d_recv = True
+        self.l_n = gen_hand_normal(self.lhand3d_msg.thumb0, self.lhand3d_msg.wrist,
+                                   self.lhand3d_msg.index0, self.lhand3d_msg.pinky0)
+        m = createMarkerArrow(rospy.Time.now(), VectToList(self.lhand3d_msg.wrist),
+                              [self.lhand3d_msg.wrist.x + self.l_n[0],
+                               self.lhand3d_msg.wrist.y + self.l_n[1],
+                               self.lhand3d_msg.wrist.z + self.l_n[2]], 0)
+        self.l_hand_normal.publish(m)
+
+    def rhand3d_cb(self, msg): 
+        rospy.loginfo_once("Recieved R Hand3D message")
+        self.rhand3d_msg = HandPose3D()
+        self.rhand3d_msg = msg
+        self.rhand3d_recv = True
+        self.r_n = gen_hand_normal(self.rhand3d_msg.thumb0, self.rhand3d_msg.wrist,
+                                   self.rhand3d_msg.index0, self.rhand3d_msg.pinky0)
+        m = createMarkerArrow(rospy.Time.now(), VectToList(self.rhand3d_msg.wrist),
+                                [self.rhand3d_msg.wrist.x + self.r_n[0],
+                                 self.rhand3d_msg.wrist.y + self.r_n[1],
+                                 self.rhand3d_msg.wrist.z + self.r_n[2]], 1)
+        self.r_hand_normal.publish(m)
 
     def pos_cb(self, msg):
 
@@ -121,7 +169,10 @@ class hpe2uavcmd():
         self.currentPose.pose.position.y = msg.pose.position.y
         self.currentPose.pose.position.z = msg.pose.position.z
         self.currentPose.pose.orientation = msg.pose.orientation
-        self.currRot = Rotation.from_quat([self.currentPose.pose.orientation.x, self.currentPose.pose.orientation.y, self.currentPose.pose.orientation.z, self.currentPose.pose.orientation.w]).as_matrix()
+        self.currRot = Rotation.from_quat([self.currentPose.pose.orientation.x,
+                                           self.currentPose.pose.orientation.y,
+                                           self.currentPose.pose.orientation.z,
+                                           self.currentPose.pose.orientation.w]).as_matrix()
 
     def calibrate(self, timeout):
 
@@ -135,49 +186,34 @@ class hpe2uavcmd():
             rospy.loginfo_throttle(1, "Calibration procedure running {}".format(elapsed))
             self.calib_first = False
             # Get the position of the right wrist
-            self.p_list.append(self.b_d_rw)
+            self.pr_list.append(self.b_d_rw)
+            self.pl_list.append(self.b_d_lw)
             return False
 
         else:
             rospy.loginfo("Calibration procedure finished!")
             n = 25 # Remove first 50 measurements, movement at first is not stable
-            x = [p[0] for p in self.p_list][n:]
-            y = [p[1] for p in self.p_list][n:]
-            z = [p[2] for p in self.p_list][n:]
-            self.calib_point = Vector3()
-            self.calib_point.x = np.median(x)
-            self.calib_point.y = np.median(y)
-            self.calib_point.z = np.median(z)
-            rospy.loginfo("Calibration point is: {}".format(self.calib_point))
+            rx = [p[0] for p in self.pr_list][n:]; lx = [p[0] for p in self.pl_list][n:]
+            ry = [p[1] for p in self.pr_list][n:]; ly = [p[1] for p in self.pl_list][n:]
+            rz = [p[2] for p in self.pr_list][n:]; lz = [p[2] for p in self.pl_list][n:]
+            self.r_cp = Vector3(); self.l_cp = Vector3()
+            self.r_cp.x = np.median(rx); self.l_cp.x = np.median(lx)
+            self.r_cp.y = np.median(ry); self.l_cp.y = np.median(ly)
+            self.r_cp.z = np.median(rz); self.l_cp.z = np.median(lz)
+            rospy.loginfo("l_cp: {}".format(self.l_cp))
+            rospy.loginfo("r_cp: {}".format(self.r_cp))
+            if self.l_cp == self.r_cp:
+                rospy.logwarn("Calibration failed!")
+                self.calib_first = True
+                return False
+            req = changeStateRequest()
+            req.state = "SERVO_CTL"
+            self.change_state_srv.call(req)
             return True
 
-    def create_marker(self, shape, px, py, pz, dist_x, dist_y, dist_z): 
-        marker = Marker()
-        marker.header.frame_id = "n_thorax"
-        marker.header.stamp = rospy.Time().now()
-        marker.ns = "arrow"
-        marker.id = 0
-        marker.type = shape
-        marker.action = Marker.ADD
-        marker.pose.position.x = self.calib_point.x
-        marker.pose.position.y = self.calib_point.y
-        marker.pose.position.z = self.calib_point.z
-        # How to transform x,y,z values to the orientation 
-        marker.pose.orientation.x = 0.0
-        marker.pose.orientation.y = 0.0
-        marker.pose.orientation.z = 0.0
-        marker.pose.orientation.w = 1.0
-        marker.scale.x = 0.25
-        marker.scale.y = 0.25
-        marker.scale.z = 0.25
-        marker.color.a = 1.0
-        marker.color.r = 0.0
-        marker.color.g = 1.0
-        return marker
-    
     def proc_hpe_est(self):
+        
         try:
-
             # TODO: Get torso coordinate frame [move this to a method]
             # TODO: Compare this to the online estimation of the HPE by openpose
             c_d_ls = pointToArray(self.hpe3d_msg.l_shoulder)
@@ -199,7 +235,6 @@ class hpe2uavcmd():
                            create_homogenous_vector(c_d_rw),
                            create_homogenous_vector(c_d_lw)])
 
-         
             # thorax in the camera frame --> TODO: Fix transformations
             T = create_homogenous_matrix(self.bRc, -np.matmul(self.bRc, c_d_torso))
             # T_inv = np.linalg.inv(T)
@@ -213,12 +248,11 @@ class hpe2uavcmd():
             # self.b_d_lw = np.matmul(self.bRc, c_d_lw) #- c_d_n)
             #self.publishMarkerArray(bD)
             # rospy.loginfo(f"bTC is {bTc}")
-            self.b_d_rw = bTc[-2] # added substraction by c_d_torso because it is already included in the bD
-            self.b_d_lw = bTc[-1] 
+            self.b_d_rw = bTc[-2] # [Right wrist]
+            # added substraction by c_d_torso because it is already included in the bD
+            self.b_d_lw = bTc[-1] # [Left wrist]
             #rospy.loginfo(f"b_d_rw: {self.b_d_rw}")
             #rospy.loginfo(f"b_d_lw: {self.b_d_lw}")
-
-
             #torso_msg = self.packSimpleTorso3DMsg(bD)
             #self.upper_body_3d_pub.publish(torso_msg)
         except Exception as e:
@@ -228,55 +262,54 @@ class hpe2uavcmd():
     def run_ctl(self, r, R):
         
         # Calc pos r 
-        dist_x = self.b_d_rw[0] - self.calib_point.x 
-        dist_y = self.b_d_rw[1] - self.calib_point.y  
-        dist_z = -(self.b_d_rw[2] - self.calib_point.z)
+        drx = self.b_d_rw[0] - self.r_cp.x; dlx = self.b_d_lw[0] - self.l_cp.x 
+        dry = self.b_d_rw[1] - self.r_cp.y; dly = self.b_d_lw[1] - self.l_cp.y  
+        drz = -(self.b_d_rw[2] - self.r_cp.z); dlz = -(self.b_d_lw[2] - self.l_cp.z)
+        dr = np.array([drx, dry, drz]); dl = np.array([dlx, dly, dlz])
 
         self.body_ctl = Pose()
         self.b_cmd = Vector3()
         self.test_r_pub.publish(self.b_cmd)
 
-        # TODO: Check this as vect
-        if R > abs(dist_x) > r:
-            self.b_cmd.x = dist_x
-        else:
-            self.b_cmd.x = 0
-
-        if R > abs(dist_y) > r:
-            self.b_cmd.y = dist_y
-        else:
-            self.b_cmd.y = 0
-
-        if R > abs(dist_z) > r:
-            self.b_cmd.z = dist_z
-        else:
-            self.b_cmd.z = 0
-        
-        rospy.logdebug("X: {}\t Y: {}\t Z: {}\t".format(self.b_cmd.x, self.b_cmd.y, self.b_cmd.z))
-        # TODO: Move to roslaunch params
-        scaling_x = 0.05; scaling_y = 0.05; scaling_z = 0.05;
+        # b_cmd --> body UAV cmd; a_cmd --> ee ARM cmd 
+        self.b_cmd = calc_body_cmd(r, R, dr)
+        self.a_cmd = calc_body_cmd(r, R, dl)
 
         # Generate pose_ref --> if DRY run do not generate cmd
-        gen_r = True
-        if gen_r:
-            pos_ref = self.generate_cmd(scaling_x, scaling_y, scaling_z)
+        gen_uav = True
+        if gen_uav:
+            usX = USCALE_X; usY = USCALE_Y; usZ = USCALE_Z;
+            pos_ref = self.gen_uav_cmd(usX, usY, usZ)
             #print(type(pos_ref))
             self.prev_pose_ref.pose.position.x = pos_ref.transforms[0].translation.x
             self.prev_pose_ref.pose.position.y = pos_ref.transforms[0].translation.y
             self.prev_pose_ref.pose.position.z = pos_ref.transforms[0].translation.z
             self.prev_pose_ref.pose.orientation = pos_ref.transforms[0].rotation
             self.traj_pub.publish(pos_ref)
-        debug = False
-        if debug:
-            rospy.loginfo("dx: {}\t dy: {}\t dz: {}\t".format(dist_x, dist_y, dist_z))
 
+        gen_arm = True 
+        if gen_arm: 
+            asX = ASCALE_X; asY = ASCALE_Y; asZ = ASCALE_Z
+            current_time = rospy.Time.from_sec(time.time())
+            vel_ref = TwistStamped()
+            vel_ref.header.stamp = current_time
+            vel_ref.header.frame_id = "end_effector_base"
+            vel_ref.twist.linear.x = self.a_cmd.x * asX
+            vel_ref.twist.linear.y = self.a_cmd.y * asY  
+            vel_ref.twist.linear.z = self.a_cmd.z * asZ
+            self.arm_cmd = vel_ref
+            self.arm_pub.publish(vel_ref)
+        
         # ARROW to visualize direction of a command
-        arrowMsg = self.create_marker(Marker.ARROW, self.calib_point.x, self.calib_point.y, self.calib_point.z, 
-                                      dist_x, dist_y, dist_z)
-        self.marker_pub.publish(arrowMsg)
+        # TODO: Visualize ARM command
+        dr_ = np.linalg.norm(dr)
+        
+        #rAMsg = self.create_marker(Marker.ARROW, self.r_cp.x, self.r_cp.y, self.r_cp.z, 
+        #                           drx/dr_, dry/dr_, drz/dr_)
+        #self.marker_pub.publish(rAMsg)
         self.first = False
 
-    def generate_cmd(self, sx, sy, sz):
+    def gen_uav_cmd(self, sx, sy, sz):
         pos_ref = PoseStamped()
         if self.first:
             pos_ref.pose.position = self.currentPose.pose.position
@@ -284,16 +317,15 @@ class hpe2uavcmd():
         else: 
             type_ = "LOCAL"
             if type_ == "LOCAL":
-                b_cmd = np.matmul(self.currRot, np.array([self.b_cmd.x, 
-                                                                         self.b_cmd.y,
-                                                                         self.b_cmd.z]))
+                b_cmd = np.matmul(self.currRot.T, np.array([self.b_cmd.x, 
+                                                          self.b_cmd.y,
+                                                          self.b_cmd.z]))
                 self.b_cmd = Vector3(b_cmd[0], b_cmd[1], b_cmd[2])
             
             pos_ref.pose.position.x = self.prev_pose_ref.pose.position.x + sx * self.b_cmd.x
             pos_ref.pose.position.y = self.prev_pose_ref.pose.position.y + sy * self.b_cmd.y
             pos_ref.pose.position.z = self.prev_pose_ref.pose.position.z + sz * self.b_cmd.z
             pos_ref.pose.orientation = self.prev_pose_ref.pose.orientation
-
 
         trajPt = MultiDOFJointTrajectoryPoint()
         if CTL_TYPE == "POSITION":
@@ -320,7 +352,10 @@ class hpe2uavcmd():
             trajPt.velocities[0].angular.y = 0
             trajPt.velocities[0].angular.z = 0
             trajPt.accelerations.append(getZeroTwist())
-        return trajPt
+
+        # Publish debug pos_ref for plotting
+        self.gen_r_pub.publish(pos_ref)
+        return trajPt        
 
     def run(self):
 
@@ -331,11 +366,12 @@ class hpe2uavcmd():
             run_ready = self.hpe3d_recv
             calib_duration = 10
             self.proc_hpe_est()
-        
+            
             # First run condition
             if run_ready and not calibrated:
                 calibrated = self.calibrate(calib_duration)
-                rospy.loginfo(f"b_d_rw: f{self.b_d_rw}")
+                rospy.loginfo_throttle(1, f"b_d_rw: {self.b_d_rw}")
+                rospy.loginfo_throttle(1, f"b_d_lw: {self.b_d_lw}")
 
             # We can start control if we have calibrated point
             if run_ready and calibrated:
@@ -343,18 +379,15 @@ class hpe2uavcmd():
                 R_ = 0.25 
                 # Deadzone is 
                 self.run_ctl(r_, R_)
-                
-                # Publish markers
-                cbMarker = self.create_marker(Marker.SPHERE, self.calib_point.x, 
-                                              self.calib_point.y, self.calib_point.z, 
-                                              0.1, 0.1, 0.1)
-                self.cb_point_marker_pub.publish(cbMarker)
 
-
-            self.rate.sleep()
-
-
+                rospy.loginfo_throttle_identical(1, f"UAV_CMD: x: {self.b_cmd.x} y: {self.b_cmd.y} z: {self.b_cmd.z}")
+                rospy.loginfo_throttle_identical(1, f"ARM_CMD: x: {self.a_cmd.x * 10.0} y: {self.a_cmd.y * 10.0} z: {self.a_cmd.z * 10.0}")
+            
+            rospy.sleep(rospy.Duration(0.01))
 
 if __name__ == "__main__":
-    hpe2uavcmd_ = hpe2uavcmd(sys.argv[1])
-    hpe2uavcmd_.run()
+    try:
+        hpe2amcmd_ = hpe2amcmd(sys.argv[1])
+        hpe2amcmd_.run()
+    except KeyboardInterrupt:
+        print("Shutting down gracefully...")

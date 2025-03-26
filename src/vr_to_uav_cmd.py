@@ -13,20 +13,15 @@ from geometry_msgs.msg import PoseStamped, Pose, Transform, Twist
 from visualization_msgs.msg import Marker
 from trajectory_msgs.msg import MultiDOFJointTrajectoryPoint
 
-from linalg_utils import pointToArray, create_homogenous_vector, create_homogenous_matrix, get_RotX, get_RotY, get_RotZ, getZeroTwist, getZeroTransform
+from linalg_utils import pointToArray, create_homogenous_vector, create_homogenous_matrix, get_RotX, get_RotY, get_RotZ
+from utils import getZeroTwist, getZeroTransform
 
-
-# TODO:
-# - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
-# - Read camera_info
-# - add painting of a z measurements
+CTL_TYPE = "POSITION" 
+CTL_TYPE = "RATE"
 
 UAV_CMD_TOPIC_NAME = "/red/tracker/input_pose"
 UAV_POS_TOPIC_NAME = "/red/pose"
 TRAJ_CMD_TOPIC_NAME = "/red/position_hold/trajectory"
-
-CTL_TYPE = "POSITION" # RATE 
-CTL_TYPE = "RATE"
 
 VR_POS_LW_TOPIC_NAME = "/vr/pos/lw"
 VR_POS_RW_TOPIC_NAME = "/vr/pos/rw"
@@ -34,7 +29,6 @@ VR_TWIST_LW_TOPIC_NAME = "/vr/twist/lw"
 VR_TWIST_RW_TOPIC_NAME = "/vr/twist/rw"
 VR_POS_HEAD_TOPIC_NAME = "/vr/pos/head"
 VR_TWIST_HEAD_TOPIC_NAME = "/vr/twist/head"
-
 
 class vr2uavcmd():
 
@@ -66,17 +60,16 @@ class vr2uavcmd():
         # body in the camera coordinate frame (T to move to the coordiante frame)
         self.bRvc = np.matmul(get_RotX(np.pi/2), get_RotY(np.pi/2))
 
-
     def _init_subscribers(self):
 
         # Pose msgs
-        self.vr_pos_lw_sub = rospy.Subscriber(VR_POS_LW_TOPIC_NAME, Pose, self.hpe3d_cb, queue_size=1)
-        self.vr_pos_rw_sub = rospy.Subscriber(VR_POS_RW_TOPIC_NAME, Pose, self.hpe3d_cb, queue_size=1)ž
-        self.vr_pos_head_sub = rospy.Subscriber(VR_POS_HEAD_TOPIC_NAME, Pose, self.hpe3d_cb, queue_size=1)
+        self.vr_pos_lw_sub = rospy.Subscriber(VR_POS_LW_TOPIC_NAME, Pose, self.vr_pos_lw_cb, queue_size=1)
+        self.vr_pos_rw_sub = rospy.Subscriber(VR_POS_RW_TOPIC_NAME, Pose, self.vr_pos_rw_cb, queue_size=1)
+        self.vr_pos_head_sub = rospy.Subscriber(VR_POS_HEAD_TOPIC_NAME, Pose, self.vr_pos_head_cb, queue_size=1)
         # Twist msgs
-        self.vr_twist_rw_cb = rospy.Subscriber(VR_TWIST_RW_TOPIC_NAME, Twist, self.hpe3d_cb, queue_size=1)
-        self.vr_twist_lw_sub = rospy.Subscriber(VR_TWIST_LW_TOPIC_NAME, Twist, self.hpe3d_cb, queue_size=1)
-        self.vr_twist_head_sub = rospy.Subscriber(VR_TWIST_HEAD_TOPIC_NAME, Twist, self.hpe3d_cb, queue_size=1)
+        self.vr_twist_rw_cb = rospy.Subscriber(VR_TWIST_RW_TOPIC_NAME, Twist, self.vr_twist_rw_cb, queue_size=1)
+        self.vr_twist_lw_sub = rospy.Subscriber(VR_TWIST_LW_TOPIC_NAME, Twist, self.vr_twist_lw_cb, queue_size=1)
+        self.vr_twist_head_sub = rospy.Subscriber(VR_TWIST_HEAD_TOPIC_NAME, Twist, self.vr_twist_head_cb, queue_size=1)
         # Uav msgs
         self.pos_sub = rospy.Subscriber(UAV_POS_TOPIC_NAME, PoseStamped, self.pos_cb, queue_size=1)
 
@@ -111,11 +104,11 @@ class vr2uavcmd():
 
     def vr_pos_head_cb(self, msg):
         self.p_h = pointToArray(msg)
-        self.R_h = quatToRot(msg.orientation)
+        #self.R_h = quatToRot(msg.orientation)
 
-
-    def vr_twist_head_cb(self):
-        pass
+    def vr_twist_head_cb(self, msg):
+        self.v_h = pointToArray(msg)
+        #self.Rdot_h = quatToRot(msg.orientation)
 
     def pos_cb(self, msg):
 
@@ -184,7 +177,47 @@ class vr2uavcmd():
         except Exception as e:
             rospy.logwarn("Failed to generate or publish HPE3d message: {}".format(e))
 
-    # TODO: Write it as a matrix because this is horrendous
+    # TODO: Move this to the separate methods 
+    def generate_cmd(self, sx, sy, sz):
+        pos_ref = PoseStamped()
+        if self.first:
+            pos_ref.pose.position = self.currentPose.pose.position
+            pos_ref.pose.orientation = self.currentPose.pose.orientation
+        else: 
+            pos_ref.pose.position.x = self.prev_pose_ref.pose.position.x + sx * self.b_cmd.x
+            pos_ref.pose.position.y = self.prev_pose_ref.pose.position.y + sy * self.b_cmd.y
+            pos_ref.pose.position.z = self.prev_pose_ref.pose.position.z + sz * self.b_cmd.z
+            pos_ref.pose.orientation = self.prev_pose_ref.pose.orientation
+
+        trajPt = MultiDOFJointTrajectoryPoint()
+        if CTL_TYPE == "POSITION":
+            # Generate MultiDOFJointTrajectory
+            trajPt.transforms.append(Transform())
+            trajPt.transforms[0].translation.x = pos_ref.pose.position.x
+            trajPt.transforms[0].translation.y = pos_ref.pose.position.y
+            trajPt.transforms[0].translation.z = pos_ref.pose.position.z
+            trajPt.transforms[0].rotation = pos_ref.pose.orientation
+            trajPt.velocities.append(getZeroTwist())
+            trajPt.accelerations.append(getZeroTwist())
+
+        if CTL_TYPE == "RATE": 
+            trajPt.transforms.append(getZeroTransform())
+            trajPt.transforms[0].translation.x = pos_ref.pose.position.x
+            trajPt.transforms[0].translation.y = pos_ref.pose.position.y
+            trajPt.transforms[0].translation.z = pos_ref.pose.position.z
+            trajPt.transforms[0].rotation = pos_ref.pose.orientation
+            trajPt.velocities.append(getZeroTwist())
+            trajPt.velocities[0].linear.x = self.b_cmd.x
+            trajPt.velocities[0].linear.y = self.b_cmd.y
+            trajPt.velocities[0].linear.z = self.b_cmd.z
+            trajPt.velocities[0].angular.x = 0
+            trajPt.velocities[0].angular.y = 0
+            trajPt.velocities[0].angular.z = 0
+            trajPt.accelerations.append(getZeroTwist())
+        return trajPt
+    
+        # TODO: Write it as a matrix because this is horrendous
+
     def run_ctl(self, r, R):
         
         # Calc pos r 
@@ -238,44 +271,6 @@ class vr2uavcmd():
         self.marker_pub.publish(arrowMsg)
         self.first = False
 
-    # TODO: Move this to the separate methods
-    def generate_cmd(self, sx, sy, sz):
-        pos_ref = PoseStamped()
-        if self.first:
-            pos_ref.pose.position = self.currentPose.pose.position
-            pos_ref.pose.orientation = self.currentPose.pose.orientation
-        else: 
-            pos_ref.pose.position.x = self.prev_pose_ref.pose.position.x + sx * self.b_cmd.x
-            pos_ref.pose.position.y = self.prev_pose_ref.pose.position.y + sy * self.b_cmd.y
-            pos_ref.pose.position.z = self.prev_pose_ref.pose.position.z + sz * self.b_cmd.z
-            pos_ref.pose.orientation = self.prev_pose_ref.pose.orientation
-
-        trajPt = MultiDOFJointTrajectoryPoint()
-        if CTL_TYPE == "POSITION":
-            # Generate MultiDOFJointTrajectory
-            trajPt.transforms.append(Transform())
-            trajPt.transforms[0].translation.x = pos_ref.pose.position.x
-            trajPt.transforms[0].translation.y = pos_ref.pose.position.y
-            trajPt.transforms[0].translation.z = pos_ref.pose.position.z
-            trajPt.transforms[0].rotation = pos_ref.pose.orientation
-            trajPt.velocities.append(getZeroTwist())
-            trajPt.accelerations.append(getZeroTwist())
-
-        if CTL_TYPE == "RATE": 
-            trajPt.transforms.append(getZeroTransform())
-            trajPt.transforms[0].translation.x = pos_ref.pose.position.x
-            trajPt.transforms[0].translation.y = pos_ref.pose.position.y
-            trajPt.transforms[0].translation.z = pos_ref.pose.position.z
-            trajPt.transforms[0].rotation = pos_ref.pose.orientation
-            trajPt.velocities.append(getZeroTwist())
-            trajPt.velocities[0].linear.x = self.b_cmd.x
-            trajPt.velocities[0].linear.y = self.b_cmd.y
-            trajPt.velocities[0].linear.z = self.b_cmd.z
-            trajPt.velocities[0].angular.x = 0
-            trajPt.velocities[0].angular.y = 0
-            trajPt.velocities[0].angular.z = 0
-            trajPt.accelerations.append(getZeroTwist())
-        return trajPt
 
     def run(self):
 
@@ -306,7 +301,6 @@ class vr2uavcmd():
 
 
             self.rate.sleep()
-
 
 
 if __name__ == "__main__":
