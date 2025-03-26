@@ -10,15 +10,18 @@ import copy
 import time
 from scipy.spatial.transform import Rotation
 
-from std_msgs.msg import Float64MultiArray, Float32
+# Messages
 from geometry_msgs.msg import Vector3
-from hpe_ros_msgs.msg import TorsoJointPositions
 from geometry_msgs.msg import PoseStamped, Pose, Transform, TwistStamped
 from visualization_msgs.msg import Marker
 from hpe_ros_msgs.msg import HumanPose3D, HandPose3D, MpHumanPose3D
-from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
+from trajectory_msgs.msg import MultiDOFJointTrajectoryPoint
 
-from utils import getZeroTwist, getZeroTransform, createMarkerArrow
+# Service 
+from uam_ros_msgs.srv import changeState, changeStateRequest
+
+# Utils
+from utils import VectToList, getZeroTwist, getZeroTransform, createMarkerArrow, gen_hand_normal, calc_body_cmd
 from linalg_utils import pointToArray, get_RotX, get_RotY, get_RotZ, create_homogenous_vector, create_homogenous_matrix
 
 
@@ -55,6 +58,9 @@ if HPE == "MPI":
 CTL_TYPE = "POSITION" # RATE 
 #CTL_TYPE = "RATE"
 
+USCALE_X = 0.1; USCALE_Y = 0.1; USCALE_Z = 0.1
+ASCALE_X = 1.0; ASCALE_Y = 1.0; ASCALE_Z = 1.0
+
 class hpe2amcmd():
 
     def __init__(self, freq):
@@ -73,6 +79,7 @@ class hpe2amcmd():
         # Initialize publishers and subscribers
         self._init_subscribers()
         self._init_publishers()
+        self._init_srvs()
 
         self.camera_frame_name = "camera_color_frame"
         # Initialize transform listener
@@ -104,8 +111,6 @@ class hpe2amcmd():
 
     def _init_publishers(self):
 
-        # self.q_pos_cmd_pub = rospy.Publisher("")
-        # TODO: Add publisher for publishing joint angles
         # CMD publishers
         # Publish commands :)
         self.gen_r_pub = rospy.Publisher("/uav/pose_ref", PoseStamped, queue_size=1)
@@ -120,6 +125,9 @@ class hpe2amcmd():
         # Check which marker to pub
         # self.marker_pub = rospy.Publisher("ctl/viz", Marker, queue_size=1) 
 
+    def _init_srvs(self):
+        self.change_state_srv = rospy.ServiceProxy("/control_arm/change_state", changeState)
+
     def hpe3d_cb(self, msg):
         rospy.loginfo_once("Recieved HPE3D message")
         self.hpe3d_msg = HumanPose3D()
@@ -131,10 +139,12 @@ class hpe2amcmd():
         self.lhand3d_msg = HandPose3D()
         self.lhand3d_msg = msg
         self.lhand3d_recv = True
-        self.l_n = self.gen_hand_normal(self.lhand3d_msg.thumb0, self.lhand3d_msg.wrist,
-                                        self.lhand3d_msg.index0, self.lhand3d_msg.pinky0)
-        m = createMarkerArrow(rospy.Time.now(), [self.lhand3d_msg.wrist.x, self.lhand3d_msg.wrist.y, self.lhand3d_msg.wrist.z],
-                              [self.lhand3d_msg.wrist.x + self.l_n[0], self.lhand3d_msg.wrist.y + self.l_n[1], self.lhand3d_msg.wrist.z + self.l_n[2]], 0)
+        self.l_n = gen_hand_normal(self.lhand3d_msg.thumb0, self.lhand3d_msg.wrist,
+                                   self.lhand3d_msg.index0, self.lhand3d_msg.pinky0)
+        m = createMarkerArrow(rospy.Time.now(), VectToList(self.lhand3d_msg.wrist),
+                              [self.lhand3d_msg.wrist.x + self.l_n[0],
+                               self.lhand3d_msg.wrist.y + self.l_n[1],
+                               self.lhand3d_msg.wrist.z + self.l_n[2]], 0)
         self.l_hand_normal.publish(m)
 
     def rhand3d_cb(self, msg): 
@@ -142,10 +152,12 @@ class hpe2amcmd():
         self.rhand3d_msg = HandPose3D()
         self.rhand3d_msg = msg
         self.rhand3d_recv = True
-        self.r_n = self.gen_hand_normal(self.rhand3d_msg.thumb0, self.rhand3d_msg.wrist,
-                                        self.rhand3d_msg.index0, self.rhand3d_msg.pinky0)
-        m = createMarkerArrow(rospy.Time.now(), [self.rhand3d_msg.wrist.x, self.rhand3d_msg.wrist.y, self.rhand3d_msg.wrist.z],
-                                [self.rhand3d_msg.wrist.x + self.r_n[0], self.rhand3d_msg.wrist.y + self.r_n[1], self.rhand3d_msg.wrist.z + self.r_n[2]], 1)
+        self.r_n = gen_hand_normal(self.rhand3d_msg.thumb0, self.rhand3d_msg.wrist,
+                                   self.rhand3d_msg.index0, self.rhand3d_msg.pinky0)
+        m = createMarkerArrow(rospy.Time.now(), VectToList(self.rhand3d_msg.wrist),
+                                [self.rhand3d_msg.wrist.x + self.r_n[0],
+                                 self.rhand3d_msg.wrist.y + self.r_n[1],
+                                 self.rhand3d_msg.wrist.z + self.r_n[2]], 1)
         self.r_hand_normal.publish(m)
 
     def pos_cb(self, msg):
@@ -194,6 +206,9 @@ class hpe2amcmd():
                 rospy.logwarn("Calibration failed!")
                 self.calib_first = True
                 return False
+            req = changeStateRequest()
+            req.state = "SERVO_CTL"
+            self.change_state_srv.call(req)
             return True
 
     def proc_hpe_est(self):
@@ -257,16 +272,13 @@ class hpe2amcmd():
         self.test_r_pub.publish(self.b_cmd)
 
         # b_cmd --> body UAV cmd; a_cmd --> ee ARM cmd 
-        self.b_cmd = self.calc_body_cmd(r, R, dr)
-        self.a_cmd = self.calc_body_cmd(r, R, dl)
-        
-        rospy.logdebug("X: {}\t Y: {}\t Z: {}\t".format(self.b_cmd.x, self.b_cmd.y, self.b_cmd.z))
-        # TODO: Move to roslaunch params
+        self.b_cmd = calc_body_cmd(r, R, dr)
+        self.a_cmd = calc_body_cmd(r, R, dl)
 
         # Generate pose_ref --> if DRY run do not generate cmd
         gen_uav = True
         if gen_uav:
-            usX = 0.01; usY = 0.01; usZ = 0.01;
+            usX = USCALE_X; usY = USCALE_Y; usZ = USCALE_Z;
             pos_ref = self.gen_uav_cmd(usX, usY, usZ)
             #print(type(pos_ref))
             self.prev_pose_ref.pose.position.x = pos_ref.transforms[0].translation.x
@@ -277,7 +289,7 @@ class hpe2amcmd():
 
         gen_arm = True 
         if gen_arm: 
-            asX = 10.0; asY = 10.0; asZ = 10.0
+            asX = ASCALE_X; asY = ASCALE_Y; asZ = ASCALE_Z
             current_time = rospy.Time.from_sec(time.time())
             vel_ref = TwistStamped()
             vel_ref.header.stamp = current_time
@@ -296,40 +308,6 @@ class hpe2amcmd():
         #                           drx/dr_, dry/dr_, drz/dr_)
         #self.marker_pub.publish(rAMsg)
         self.first = False
-
-    def calc_body_cmd(self, r, R, d): 
-        if r < np.linalg.norm(d) < R:
-            return Vector3(d[0], d[1], d[2])
-        else:
-            return Vector3(0, 0, 0)
-        
-    def gen_hand_normal(self, thumb, wrist, index, pinky): 
-        # For left hand
-        t = np.array([thumb.x, thumb.y, thumb.z])
-        w = np.array([wrist.x, wrist.y, wrist.z])
-        i = np.array([index.x, index.y, index.z])
-        p = np.array([pinky.x, pinky.y, pinky.z])
-
-        vt = t - w;         
-        norm_vt = np.linalg.norm(vt); 
-        if norm_vt != 0:
-            vt_ = vt / norm_vt
-        
-        vi = i - w; 
-        norm_vi = np.linalg.norm(vi)
-        if norm_vi != 0: 
-            vi_ = vi / norm_vi
-        
-        vp = p - w; 
-        norm_vp = np.linalg.norm(vp)
-        if norm_vp != 0:
-            vp_ = vp / norm_vp
-
-        if norm_vt != 0 and norm_vi != 0: 
-            return np.cross(vt_, vi_)
-        
-        else: 
-            return np.array([0, 0, 0])
 
     def gen_uav_cmd(self, sx, sy, sz):
         pos_ref = PoseStamped()
@@ -402,12 +380,8 @@ class hpe2amcmd():
                 # Deadzone is 
                 self.run_ctl(r_, R_)
 
-                rospy.loginfo_throttle_identical(1, "UAV_CMD: {}".format(self.b_cmd))
-                rospy.loginfo_throttle_identical(1, "ARM_CMD: {}".format(self.arm_cmd))
-                
-                # Publish markers of calib pts
-                #cbMarker = self.create_marker(Marker.SPHERE, self.l_cp.x, 
-                #                              self.lp.y, self.l_cp.z)
+                rospy.loginfo_throttle_identical(1, f"UAV_CMD: x: {self.b_cmd.x} y: {self.b_cmd.y} z: {self.b_cmd.z}")
+                rospy.loginfo_throttle_identical(1, f"ARM_CMD: x: {self.a_cmd.x * 10.0} y: {self.a_cmd.y * 10.0} z: {self.a_cmd.z * 10.0}")
             
             rospy.sleep(rospy.Duration(0.01))
 

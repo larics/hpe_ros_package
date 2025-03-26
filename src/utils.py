@@ -413,3 +413,42 @@ def createMarkerArrow(stamp, start_point, end_point, i, color=(255, 0, 0)):
     m_.points.append(pt1)
     m_.points.append(pt2)
     return m_
+
+# Gen hand normal
+def gen_hand_normal(thumb, wrist, index, pinky): 
+    # For left hand
+    t = np.array([thumb.x, thumb.y, thumb.z])
+    w = np.array([wrist.x, wrist.y, wrist.z])
+    i = np.array([index.x, index.y, index.z])
+    p = np.array([pinky.x, pinky.y, pinky.z])
+
+    vt = t - w;         
+    norm_vt = np.linalg.norm(vt); 
+    if norm_vt != 0:
+        vt_ = vt / norm_vt
+    
+    vi = i - w; 
+    norm_vi = np.linalg.norm(vi)
+    if norm_vi != 0: 
+        vi_ = vi / norm_vi
+    
+    vp = p - w; 
+    norm_vp = np.linalg.norm(vp)
+    if norm_vp != 0:
+        vp_ = vp / norm_vp
+
+    if norm_vt != 0 and norm_vi != 0: 
+        return np.cross(vt_, vi_)
+    
+    else: 
+        return np.array([0, 0, 0])
+
+# Calc body cmd
+def calc_body_cmd(r, R, d): 
+    if r < np.linalg.norm(d) < R:
+        return Vector3(d[0], d[1], d[2])
+    else:
+        return Vector3(0, 0, 0)
+    
+def VectToList(vect): 
+    return [vect.x, vect.y, vect.z]

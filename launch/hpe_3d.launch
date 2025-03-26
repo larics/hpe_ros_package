@@ -3,12 +3,13 @@
 <arg name="frequency" value="25"/>
 <arg name="openpose" default="true"/>
 <arg name="kalman" default="false"/>
+<arg name="use_sim_time" default="false"/>
 
 <!-- Depth extraction node --> <!-- maybe not neccessary if using OpenPose -->
-<node name="depth_extraction_node" ns="hpe3d" pkg="hpe_ros_package" type="hpe_3d.py" args="$(arg frequency) $(arg openpose)" output="screen" />
+<node name="depth_extraction_node" ns="hpe3d" pkg="hpe_ros_package" type="hpe_3d.py" args="$(arg frequency) $(arg openpose) $(arg use_sim_time)" output="screen" />
 
 <!-- Transform HPE to ARM CMD -->
-<node name="hpe_arm_node" pkg="hpe_ros_package" type="hpe_to_arm_cmd.py" args="$(arg frequency)" output="screen" />
+<!--node name="hpe_arm_node" pkg="hpe_ros_package" type="hpe_to_arm_cmd.py" args="$(arg frequency)" output="screen" /-->
 
 <!-- Transform HPE to UAV CMD -->
 <!--node name="hpe_uav_node" pkg="hpe_ros_package" type="hpe_to_uav_cmd.py" args="$(arg frequency)" output="screen"/-->
