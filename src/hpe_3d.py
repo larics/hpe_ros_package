@@ -29,8 +29,17 @@ import sensor_msgs.point_cloud2 as pc2
 # - Record bag of l shoulder, r shoulder and rest of the body parts 
 # - Compare results 
 
+CAM = "realsense"
 USE_HPE = True
 USE_HANDS = False
+
+if CAM=="luxonis":
+    COLOR_IMAGE_TOPIC="/camera/color/image_raw"
+    PCL_TOPIC="/camera/depth/color/points"
+
+if CAM =="realsense": 
+    COLOR_IMAGE_TOPIC="/camera/color/image_raw"
+    PCL_TOPIC="/camera/depth_registered/points"
 
 class HPE2Dto3D(): 
 
@@ -103,7 +112,6 @@ class HPE2Dto3D():
                               13: "ring0", 14: "ring1", 15: "ring2", 16: "ring3",
                               17: "pinky0", 18: "pinky1", 19: "pinky2", 20: "pinky3"}
         
-        
         # self.indexing = different indexing depending on weights that are used!
         if self.mpii: self.indexing = self.mpii_indexing
         if self.coco: self.indexing = self.coco_indexing   
@@ -118,15 +126,15 @@ class HPE2Dto3D():
 
     def _init_subscribers(self):
 
-        self.camera_sub = rospy.Subscriber("/camera/color/image_raw", Image, self.image_cb, queue_size=1)
-        self.depth_sub = rospy.Subscriber("/camera/depth_registered/points", PointCloud2, self.pcl_cb, queue_size=1)
+        self.camera_sub = rospy.Subscriber(COLOR_IMAGE_TOPIC, Image, self.image_cb, queue_size=1)
+        self.depth_sub = rospy.Subscriber(PCL_TOPIC, PointCloud2, self.pcl_cb, queue_size=1)
         self.depth_cinfo_sub    = rospy.Subscriber("/camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
        
         if self.openpose: 
             #self.predictions_sub    = rospy.Subscriber("/frame", Frame, self.pred_cb, queue_size=1)
             self.predictions_sub    = message_filters.Subscriber("/frame", Frame)
             #self.predictions_sub    = message_filters.Subscriber("/hpe_2d", Frame)
-            self.depth_sub          = message_filters.Subscriber("/camera/depth/color/points", PointCloud2)
+            self.depth_sub          = message_filters.Subscriber(PCL_TOPIC, PointCloud2)
             # Doesn't matter! 
             self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 5)
             self.ats.registerCallback(self.frame_pcl_cb)

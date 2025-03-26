@@ -67,6 +67,7 @@ class Pcd2Ply:
         o3d.io.write_point_cloud("/root/output.ply", pcd)
         rospy.loginfo("Saved point cloud to output.ply")
 
+    # Color saving
     def cpcl_cb(self, ros_point_cloud):
         # Convert PointCloud2 to a NumPy array
         points_list = []
@@ -94,7 +95,6 @@ class Pcd2Ply:
         # Save to .ply file with colors
         o3d.io.write_point_cloud("/root/output.ply", pcd)
         rospy.loginfo("Saved point cloud with colors to output.ply")
-
 
     def run(self):
         rospy.spin()

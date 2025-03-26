@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 
+# PY pkgs
 import os
 import sys
-
 import rospy
 import tf
 import numpy as np
@@ -23,16 +23,6 @@ from uam_ros_msgs.srv import changeState, changeStateRequest
 # Utils
 from utils import VectToList, getZeroTwist, getZeroTransform, createMarkerArrow, gen_hand_normal, calc_body_cmd
 from linalg_utils import pointToArray, get_RotX, get_RotY, get_RotZ, create_homogenous_vector, create_homogenous_matrix
-
-
-# TODO:
-# - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
-# - Read camera_info
-# - add painting of a z measurements
-# - Add stuff for recording data 
-
-# Constants
-# TODO: Set as launch file argument
 
 USE_HANDS = False
 
