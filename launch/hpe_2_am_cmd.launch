@@ -1,0 +1,11 @@
+<launch>
+
+<arg name="frequency" value="30"/>
+<arg name="use_sim_time" default="false"/>
+
+<!-- Transform HPE to CMD -->
+<node name="hpe_to_am_node" ns="hpe2uav" pkg="hpe_ros_package" type="hpe_to_am_cmd.py" args="$(arg frequency)" output="screen">
+    <param name="/use_sim_time" value="false" />
+</node>
+
+</launch>

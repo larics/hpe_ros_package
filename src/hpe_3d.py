@@ -29,7 +29,8 @@ import sensor_msgs.point_cloud2 as pc2
 # - Record bag of l shoulder, r shoulder and rest of the body parts 
 # - Compare results 
 
-USE_HANDS = True
+USE_HPE = True
+USE_HANDS = False
 
 class HPE2Dto3D(): 
 
@@ -357,7 +358,7 @@ class HPE2Dto3D():
                 rospy.loginfo_throttle(30, "Publishing 3D pose of the human!")
                 t_s = rospy.Time.now().to_sec()
 
-                self.use_hpe = USE_HANDS
+                self.use_hpe = USE_HPE
                 if self.use_hpe:
                     rgbd_hpe3d_msg, openpose_hpe3d_msg = self.get_hpe3d(copy.deepcopy(self.predictions))
                     self.rgbd_hpe3d_pub.publish(rgbd_hpe3d_msg)

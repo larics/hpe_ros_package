@@ -7,6 +7,7 @@ import rospy
 import tf
 import numpy as np
 import copy
+import time
 from scipy.spatial.transform import Rotation
 
 from std_msgs.msg import Float64MultiArray, Float32
@@ -29,6 +30,9 @@ from linalg_utils import pointToArray, get_RotX, get_RotY, get_RotZ, create_homo
 
 # Constants
 # TODO: Set as launch file argument
+
+USE_HANDS = False
+
 HPE = "OPENPOSE"
 UAV_CMD_TOPIC_NAME = "/red/tracker/input_pose"
 UAV_POS_TOPIC_NAME = "/red/pose"
@@ -45,6 +49,8 @@ if HPE == "OPENPOSE":
 if HPE == "MPI":
     HPE3D_PRED_TOPIC_NAME = "/mp_ros/loc/hpe3d"
     hpe_msg_type = MpHumanPose3D
+    # TODO: 
+    # Add MPI hand pose message type
 
 CTL_TYPE = "POSITION" # RATE 
 #CTL_TYPE = "RATE"
@@ -92,8 +98,9 @@ class hpe2amcmd():
         # self.hpe_3d_sub  = rospy.Subscriber("camera/color/image_raw", Image, self.hpe3d_cb, queue_size=1)
         self.hpe_3d_sub = rospy.Subscriber(HPE3D_PRED_TOPIC_NAME, hpe_msg_type, self.hpe3d_cb, queue_size=1)
         self.pos_sub = rospy.Subscriber(UAV_POS_TOPIC_NAME, PoseStamped, self.pos_cb, queue_size=1)
-        self.l_hand_3d_sub = rospy.Subscriber(LHAND3D_PRED_TOPIC_NAME, hand_msg_type, self.lhand3d_cb, queue_size=1)
-        self.r_hand_3d_sub = rospy.Subscriber(RHAND3D_PRED_TOPIC_NAME, hand_msg_type, self.rhand3d_cb, queue_size=1)
+        if USE_HANDS:
+            self.l_hand_3d_sub = rospy.Subscriber(LHAND3D_PRED_TOPIC_NAME, hand_msg_type, self.lhand3d_cb, queue_size=1)
+            self.r_hand_3d_sub = rospy.Subscriber(RHAND3D_PRED_TOPIC_NAME, hand_msg_type, self.rhand3d_cb, queue_size=1)
 
     def _init_publishers(self):
 
@@ -141,7 +148,6 @@ class hpe2amcmd():
                                 [self.rhand3d_msg.wrist.x + self.r_n[0], self.rhand3d_msg.wrist.y + self.r_n[1], self.rhand3d_msg.wrist.z + self.r_n[2]], 1)
         self.r_hand_normal.publish(m)
 
-
     def pos_cb(self, msg):
 
         self.pos_recv = True
@@ -184,6 +190,10 @@ class hpe2amcmd():
             self.r_cp.z = np.median(rz); self.l_cp.z = np.median(lz)
             rospy.loginfo("l_cp: {}".format(self.l_cp))
             rospy.loginfo("r_cp: {}".format(self.r_cp))
+            if self.l_cp == self.r_cp:
+                rospy.logwarn("Calibration failed!")
+                self.calib_first = True
+                return False
             return True
 
     def proc_hpe_est(self):
@@ -267,14 +277,15 @@ class hpe2amcmd():
 
         gen_arm = True 
         if gen_arm: 
-            asX = 3.0; asY = 3.0; asZ = 3.0
-            current_time = rospy.Time.now()
+            asX = 10.0; asY = 10.0; asZ = 10.0
+            current_time = rospy.Time.from_sec(time.time())
             vel_ref = TwistStamped()
             vel_ref.header.stamp = current_time
             vel_ref.header.frame_id = "end_effector_base"
             vel_ref.twist.linear.x = self.a_cmd.x * asX
             vel_ref.twist.linear.y = self.a_cmd.y * asY  
             vel_ref.twist.linear.z = self.a_cmd.z * asZ
+            self.arm_cmd = vel_ref
             self.arm_pub.publish(vel_ref)
         
         # ARROW to visualize direction of a command
@@ -390,11 +401,15 @@ class hpe2amcmd():
                 R_ = 0.25 
                 # Deadzone is 
                 self.run_ctl(r_, R_)
+
+                rospy.loginfo_throttle_identical(1, "UAV_CMD: {}".format(self.b_cmd))
+                rospy.loginfo_throttle_identical(1, "ARM_CMD: {}".format(self.arm_cmd))
                 
                 # Publish markers of calib pts
                 #cbMarker = self.create_marker(Marker.SPHERE, self.l_cp.x, 
                 #                              self.lp.y, self.l_cp.z)
-                rospy.sleep(rospy.Duration(0.01))
+            
+            rospy.sleep(rospy.Duration(0.01))
 
 if __name__ == "__main__":
     try:
