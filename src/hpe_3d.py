@@ -409,8 +409,6 @@ def convert_pose_predictions_to_dict(predictions):
         result['z'].append((t[2],))
     return result
 
-
-
 if __name__ == "__main__": 
     hpe3D = HPE2Dto3D(sys.argv[1], sys.argv[2])
     hpe3D.run()

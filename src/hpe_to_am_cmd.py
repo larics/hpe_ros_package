@@ -25,6 +25,9 @@ from utils import VectToList, getZeroTwist, getZeroTransform, createMarkerArrow,
 from linalg_utils import pointToArray, get_RotX, get_RotY, get_RotZ, create_homogenous_vector, create_homogenous_matrix
 
 USE_HANDS = False
+SLEEP_RATE = 0.1
+CTL_TYPE = "POSITION" # RATE 
+#CTL_TYPE = "RATE"
 
 HPE = "OPENPOSE"
 UAV_CMD_TOPIC_NAME = "/red/tracker/input_pose"
@@ -41,12 +44,11 @@ if HPE == "OPENPOSE":
 
 if HPE == "MPI":
     HPE3D_PRED_TOPIC_NAME = "/mp_ros/loc/hpe3d"
+    LHAND3D_PRED_TOPIC_NAME = "/mp_ros/lhand3d"
+    RHAND3D_PRED_TOPIC_NAME = "/mp_ros/rhand3d"
     hpe_msg_type = MpHumanPose3D
     # TODO: 
     # Add MPI hand pose message type
-
-CTL_TYPE = "POSITION" # RATE 
-#CTL_TYPE = "RATE"
 
 USCALE_X = 0.1; USCALE_Y = 0.1; USCALE_Z = 0.1
 ASCALE_X = 1.0; ASCALE_Y = 1.0; ASCALE_Z = 1.0
@@ -196,9 +198,14 @@ class hpe2amcmd():
                 rospy.logwarn("Calibration failed!")
                 self.calib_first = True
                 return False
-            req = changeStateRequest()
-            req.state = "SERVO_CTL"
-            self.change_state_srv.call(req)
+            
+            try:
+                req = changeStateRequest()
+                req.state = "SERVO_CTL"
+                self.change_state_srv.call(req)
+            except Exception as e:
+                rospy.logwarn("Failed to change state: {}".format(e))
+
             return True
 
     def proc_hpe_est(self):
@@ -373,7 +380,7 @@ class hpe2amcmd():
                 rospy.loginfo_throttle_identical(1, f"UAV_CMD: x: {self.b_cmd.x} y: {self.b_cmd.y} z: {self.b_cmd.z}")
                 rospy.loginfo_throttle_identical(1, f"ARM_CMD: x: {self.a_cmd.x * 10.0} y: {self.a_cmd.y * 10.0} z: {self.a_cmd.z * 10.0}")
             
-            rospy.sleep(rospy.Duration(0.01))
+            rospy.sleep(rospy.Duration(SLEEP_RATE))
 
 if __name__ == "__main__":
     try:
