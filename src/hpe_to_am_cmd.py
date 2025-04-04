@@ -31,7 +31,7 @@ CTL_TYPE = "POSITION" # RATE
 
 HPE = "OPENPOSE"
 UAV_CMD_TOPIC_NAME = "/red/tracker/input_pose"
-UAV_POS_TOPIC_NAME = "/red/pose"
+UAV_POS_TOPIC_NAME = "/red/mavros/local_position/pose"
 ARM_CMD_TOPIC_NAME = "/control_arm/delta_twist_cmds"
 TRAJ_CMD_TOPIC_NAME = "/red/position_hold/trajectory"
 
@@ -51,7 +51,7 @@ if HPE == "MPI":
     # Add MPI hand pose message type
 
 USCALE_X = 0.1; USCALE_Y = 0.1; USCALE_Z = 0.1
-ASCALE_X = 1.0; ASCALE_Y = 1.0; ASCALE_Z = 1.0
+ASCALE_X = 0.5; ASCALE_Y = 0.5; ASCALE_Z = 0.5
 
 class hpe2amcmd():
 
