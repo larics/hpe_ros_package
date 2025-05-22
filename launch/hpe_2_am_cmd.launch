@@ -2,9 +2,11 @@
 
 <arg name="frequency" value="30"/>
 <arg name="use_sim_time" default="false"/>
+<arg name="cam_type" default="realsense"/>
+<arg name="hpe_algorithm" default="openpose"/>
 
 <!-- Transform HPE to CMD -->
-<node name="hpe_to_am_node" ns="hpe2uav" pkg="hpe_ros_package" type="hpe_to_am_cmd.py" args="$(arg frequency)" output="screen">
+<node name="hpe_to_am_node" ns="hpe2uav" pkg="hpe_ros_package" type="hpe_to_am_cmd.py" args="$(arg frequency) $(arg hpe_algorithm)"  output="screen">
     <param name="/use_sim_time" value="false" />
 </node>
 

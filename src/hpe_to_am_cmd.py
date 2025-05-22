@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 
+# PY pkgs
 import os
 import sys
-
 import rospy
 import tf
 import numpy as np
@@ -24,46 +24,38 @@ from uam_ros_msgs.srv import changeState, changeStateRequest
 from utils import VectToList, getZeroTwist, getZeroTransform, createMarkerArrow, gen_hand_normal, calc_body_cmd
 from linalg_utils import pointToArray, get_RotX, get_RotY, get_RotZ, create_homogenous_vector, create_homogenous_matrix
 
-
-# TODO:
-# - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
-# - Read camera_info
-# - add painting of a z measurements
-# - Add stuff for recording data 
-
-# Constants
-# TODO: Set as launch file argument
-
 USE_HANDS = False
-
-HPE = "OPENPOSE"
-UAV_CMD_TOPIC_NAME = "/red/tracker/input_pose"
-UAV_POS_TOPIC_NAME = "/red/pose"
-ARM_CMD_TOPIC_NAME = "/control_arm/delta_twist_cmds"
-TRAJ_CMD_TOPIC_NAME = "/red/position_hold/trajectory"
-
-if HPE == "OPENPOSE":
-    HPE3D_PRED_TOPIC_NAME = "/hpe3d/openpose_hpe3d"
-    LHAND3D_PRED_TOPIC_NAME = "/hpe3d/lhand3d"
-    RHAND3D_PRED_TOPIC_NAME = "/hpe3d/rhand3d"
-    hpe_msg_type = HumanPose3D
-    hand_msg_type = HandPose3D
-
-if HPE == "MPI":
-    HPE3D_PRED_TOPIC_NAME = "/mp_ros/loc/hpe3d"
-    hpe_msg_type = MpHumanPose3D
-    # TODO: 
-    # Add MPI hand pose message type
-
+SLEEP_RATE = 0.1
 CTL_TYPE = "POSITION" # RATE 
 #CTL_TYPE = "RATE"
 
+HPE = "MPI"
+UAV_CMD_TOPIC_NAME = "/red/tracker/input_pose"
+UAV_POS_TOPIC_NAME = "/red/mavros/local_position/pose"
+ARM_CMD_TOPIC_NAME = "/control_arm/delta_twist_cmds"
+TRAJ_CMD_TOPIC_NAME = "/red/position_hold/trajectory"
+
+
 USCALE_X = 0.1; USCALE_Y = 0.1; USCALE_Z = 0.1
-ASCALE_X = 1.0; ASCALE_Y = 1.0; ASCALE_Z = 1.0
+ASCALE_X = 0.5; ASCALE_Y = 0.5; ASCALE_Z = 0.5
 
 class hpe2amcmd():
 
-    def __init__(self, freq):
+    def __init__(self, freq, hpe_algorithm):
+
+        # Modify topic names depending on the algorithm used
+        if hpe_algorithm == "openpose":
+            self.hpe3d_pred_topic_name = "/hpe3d/openpose_hpe3d"
+            self.lhand3d_pred_topic_name = "/hpe3d/lhand3d"
+            self.rhand3d_pred_topic_name = "/hpe3d/rhand3d"
+            self.hpe_msg_type = HumanPose3D
+            self.hand_msg_type = HandPose3D
+        
+        if hpe_algorithm == "mpi":
+            self.hpe3d_pred_topic_name = "/mp_ros/loc/hpe3d"
+            self.lhand3d_pred_topic_name = "/mp_ros/lhand3d"
+            self.rhand3d_pred_topic_name = "/mp_ros/rhand3d"
+            self.hpe_msg_type = MpHumanPose3D
 
         rospy.init_node("hpe2cmd", log_level=rospy.INFO)
 
@@ -103,11 +95,11 @@ class hpe2amcmd():
     def _init_subscribers(self):
 
         # self.hpe_3d_sub  = rospy.Subscriber("camera/color/image_raw", Image, self.hpe3d_cb, queue_size=1)
-        self.hpe_3d_sub = rospy.Subscriber(HPE3D_PRED_TOPIC_NAME, hpe_msg_type, self.hpe3d_cb, queue_size=1)
+        self.hpe_3d_sub = rospy.Subscriber(self.hpe3d_pred_topic_name, self.hpe_msg_type, self.hpe3d_cb, queue_size=1)
         self.pos_sub = rospy.Subscriber(UAV_POS_TOPIC_NAME, PoseStamped, self.pos_cb, queue_size=1)
         if USE_HANDS:
-            self.l_hand_3d_sub = rospy.Subscriber(LHAND3D_PRED_TOPIC_NAME, hand_msg_type, self.lhand3d_cb, queue_size=1)
-            self.r_hand_3d_sub = rospy.Subscriber(RHAND3D_PRED_TOPIC_NAME, hand_msg_type, self.rhand3d_cb, queue_size=1)
+            self.l_hand_3d_sub = rospy.Subscriber(self.lhand3d_pred_topic_name, self.hand_msg_type, self.lhand3d_cb, queue_size=1)
+            self.r_hand_3d_sub = rospy.Subscriber(self.rhand3d_pred_topic_name, self.hand_msg_type, self.rhand3d_cb, queue_size=1)
 
     def _init_publishers(self):
 
@@ -206,9 +198,14 @@ class hpe2amcmd():
                 rospy.logwarn("Calibration failed!")
                 self.calib_first = True
                 return False
-            req = changeStateRequest()
-            req.state = "SERVO_CTL"
-            self.change_state_srv.call(req)
+            
+            try:
+                req = changeStateRequest()
+                req.state = "SERVO_CTL"
+                self.change_state_srv.call(req)
+            except Exception as e:
+                rospy.logwarn("Failed to change state: {}".format(e))
+
             return True
 
     def proc_hpe_est(self):
@@ -383,11 +380,11 @@ class hpe2amcmd():
                 rospy.loginfo_throttle_identical(1, f"UAV_CMD: x: {self.b_cmd.x} y: {self.b_cmd.y} z: {self.b_cmd.z}")
                 rospy.loginfo_throttle_identical(1, f"ARM_CMD: x: {self.a_cmd.x * 10.0} y: {self.a_cmd.y * 10.0} z: {self.a_cmd.z * 10.0}")
             
-            rospy.sleep(rospy.Duration(0.01))
+            rospy.sleep(rospy.Duration(SLEEP_RATE))
 
 if __name__ == "__main__":
     try:
-        hpe2amcmd_ = hpe2amcmd(sys.argv[1])
+        hpe2amcmd_ = hpe2amcmd(sys.argv[1], sys.argv[2])
         hpe2amcmd_.run()
     except KeyboardInterrupt:
         print("Shutting down gracefully...")
