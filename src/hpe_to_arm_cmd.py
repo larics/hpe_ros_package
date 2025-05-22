@@ -17,7 +17,7 @@ from hpe_ros_msgs.msg import TorsoJointPositions, JointArmCmd, CartesianArmCmd, 
 # TODO:
 # - Camera transformation https://www.cs.toronto.edu/~jepson/csc420/notes/imageProjection.pdf
 # - Read camera_info 
-# - add painting of a z measurements  
+# - add painting of a z measurements [Distance based? ]
 
 class hpe2armcmd():
 

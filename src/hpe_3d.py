@@ -29,24 +29,33 @@ import sensor_msgs.point_cloud2 as pc2
 # - Record bag of l shoulder, r shoulder and rest of the body parts 
 # - Compare results 
 
-CAM = "realsense"
+# 
+CAM = "luxonis"
 USE_HPE = True
 USE_HANDS = False
 
-if CAM=="luxonis":
-    COLOR_IMAGE_TOPIC="/camera/color/image_raw"
-    PCL_TOPIC="/camera/depth/color/points"
 
-if CAM =="realsense": 
-    COLOR_IMAGE_TOPIC="/camera/color/image_raw"
-    PCL_TOPIC="/camera/depth_registered/points"
 
 class HPE2Dto3D(): 
 
-    def __init__(self, freq, openpose):
-        
+    def __init__(self, freq, openpose, cam_type):
+
+        if cam_type =="luxonis":
+            self.color_img_topic_name = "/camera/color/image_raw"
+            self.pcl_topic_name = "/camera/depth/color/points"
+
+        if cam_type =="realsense": 
+            self.color_img_topic_name = "/camera/color/image_raw"
+            self.pcl_topic_name = "/camera/depth_registered/points"
+            
         # TODO: Add LOG_LEVEL as argument
         rospy.init_node("hpe3d", log_level=rospy.INFO)
+
+        # Start running logs
+        rospy.loginfo("Camera type is: {}".format(cam_type))
+        rospy.loginfo("Camera topic name is: {}".format(self.color_img_topic_name))
+        rospy.loginfo("PCL topic name is: {}".format(self.pcl_topic_name))
+        rospy.loginfo("System frequency is: {}".format(freq))
 
         self.rate = rospy.Rate(int(float(freq)))
 
@@ -126,19 +135,20 @@ class HPE2Dto3D():
 
     def _init_subscribers(self):
 
-        self.camera_sub = rospy.Subscriber(COLOR_IMAGE_TOPIC, Image, self.image_cb, queue_size=1)
-        self.depth_sub = rospy.Subscriber(PCL_TOPIC, PointCloud2, self.pcl_cb, queue_size=1)
+        self.camera_sub = rospy.Subscriber(self.color_img_topic_name, Image, self.image_cb, queue_size=1)
+        self.depth_sub = rospy.Subscriber(self.pcl_topic_name, PointCloud2, self.pcl_cb, queue_size=1)
         self.depth_cinfo_sub    = rospy.Subscriber("/camera/depth/camera_info", CameraInfo, self.cinfo_cb, queue_size=1)
        
         if self.openpose: 
             #self.predictions_sub    = rospy.Subscriber("/frame", Frame, self.pred_cb, queue_size=1)
             self.predictions_sub    = message_filters.Subscriber("/frame", Frame)
             #self.predictions_sub    = message_filters.Subscriber("/hpe_2d", Frame)
-            self.depth_sub          = message_filters.Subscriber(PCL_TOPIC, PointCloud2)
+            self.depth_sub          = message_filters.Subscriber(self.pcl_topic_name, PointCloud2)
             # Doesn't matter! 
             self.ats                = message_filters.TimeSynchronizer([self.predictions_sub, self.depth_sub], 5)
             self.ats.registerCallback(self.frame_pcl_cb)
 
+        # Simplebaselines artifact
         else: 
             self.predictions_sub    = rospy.Subscriber("hpe_preds", Float64MultiArray, self.pred_cb, queue_size=1)
         
@@ -410,10 +420,8 @@ def convert_pose_predictions_to_dict(predictions):
     return result
 
 if __name__ == "__main__": 
-    hpe3D = HPE2Dto3D(sys.argv[1], sys.argv[2])
+    hpe3D = HPE2Dto3D(sys.argv[1], sys.argv[2], sys.argv[3])
     hpe3D.run()
-
-
 
 """
     def image_pcl_cb(self, img_msg, pcl_msg): 
